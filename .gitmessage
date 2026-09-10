@@ -1,0 +1,34 @@
+
+# <type>(<scope>): <subject>          ← 50 字符以内，祈使句，结尾不加句号
+# 空行（必须保留，用于分隔 subject 与 body）
+# <body>                              ← 说明「为什么改」，每行不超过 72 字符
+# 空行
+# <footer>                            ← BREAKING CHANGE: ... / Closes #12
+#
+# ---------- 提交类型 ----------
+# feat      新特性（增加新功能）
+# fix       修复问题（修复 bug）
+# docs      文档更新
+# style     格式调整（无逻辑变更，如缩进、空格）
+# refactor  代码重构（非修复性改动）
+# test      添加/修改测试
+# chore     其他杂项（更新依赖、构建工具等）
+# perf      性能优化（社区扩展）
+# ci        CI/CD 配置变更（社区扩展）
+#
+# ---------- 示例 ----------
+# feat(auth): add support for two-factor authentication
+#
+# This commit introduces two-factor authentication (2FA) to enhance security
+# during login. It uses a time-based one-time password (TOTP) generator app.
+#
+# BREAKING CHANGE: This change removes the old login method.
+#
+# ---------- 规范 ----------
+# 1. 第一行不换行，50 字符以内
+# 2. 第二行必须为空行
+# 3. body 每行不超过 72 字符
+# 4. 统一使用英文，祈使句（add / fix / update）
+# 5. 一次提交只做一件事，产出即提交
+#
+# 完整规范见 docs/COLLABORATION.md 第 4 节
