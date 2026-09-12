@@ -7,7 +7,7 @@
 
 HeartEcho（心回响）：前后端分离的 AI 情感陪伴 Web 应用。Vue3 + TS 前端 → Go/Gin 业务后端 → Python FastAPI AI 服务 → PostgreSQL。核心是"像真人一样"的 AI 伴侣：有记忆、有情绪（内部信号）、能主动发消息、能发朋友圈。
 
-**当前状态**：仓库里只有文档（`README.md` + `docs/`），`backend/`、`frontend/`、`ai-service/`、`deploy/` 的代码骨架尚未创建。任务若涉及新建代码，按 §3 的目标目录结构放置。
+**当前状态**：代码骨架正在逐步创建中，以仓库实际文件为准。任务若涉及新建代码，按 §3 的目标目录结构放置。
 
 ## 1. 权威文档与决策顺序
 
@@ -240,3 +240,4 @@ Recovery → RequestLogger → CORS → BizErrorHandler → JWTAuth → Handler
 **绝不砍**：登录注册 / 人设 / 流式对话 / 情感分析。
 
 **核心演示链路**：登录 → 创建人设 → 流式对话（情感感知）→ AI 记住信息 → 主动消息 → 朋友圈互动（P1 有余量再加日程提醒）。
+
