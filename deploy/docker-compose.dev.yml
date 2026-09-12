@@ -1,0 +1,13 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: heart_echo_db
+    restart: always
+    environment:
+      POSTGRES_USER: hecho
+      POSTGRES_PASSWORD: hecho123
+      POSTGRES_DB: heart_echo
+    ports:
+      - "5432:5432"
+    volumes:
+      - ../pg_data:/var/lib/postgresql/data
