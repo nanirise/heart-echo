@@ -35,7 +35,7 @@ const (
 
 	// 4030 只用于功能层面的越权（封禁用户访问、无权限使用某功能）。
 	// 资源层面的越权不走这里，见 4043 的说明。
-	ErrForbidden ErrorCode = 4030 // 无权限访问该资源
+	ErrForbidden ErrorCode = 4030 // 无权限使用该功能
 
 	ErrNotFound     ErrorCode = 4040 // 资源不存在
 	ErrUserNotFound ErrorCode = 4041 // 用户不存在
@@ -70,7 +70,7 @@ var codeMessages = map[ErrorCode]string{
 	ErrRefreshInvalid:   "刷新令牌无效，请重新登录",
 	ErrOldPasswordWrong: "原密码不正确",
 
-	ErrForbidden: "无权限访问该资源",
+	ErrForbidden: "无权限使用该功能",
 
 	ErrNotFound:        "资源不存在",
 	ErrUserNotFound:    "用户不存在",

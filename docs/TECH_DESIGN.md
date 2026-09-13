@@ -652,7 +652,7 @@ const (
 
     // 4030 只用于功能层面的越权（封禁用户、无权限的功能）。
     // 资源越权（访问他人 persona）按「人设不存在」返回 4043，不走这里。
-    ErrForbidden ErrorCode = 4030 // 无权限访问该资源
+    ErrForbidden ErrorCode = 4030 // 无权限使用该功能
 
     ErrNotFound         ErrorCode = 4040 // 资源不存在
     ErrUserNotFound     ErrorCode = 4041 // 用户不存在
@@ -682,7 +682,7 @@ var codeMessages = map[ErrorCode]string{
     ErrRefreshInvalid:  "刷新令牌无效，请重新登录",
     ErrOldPasswordWrong: "原密码不正确",
 
-    ErrForbidden: "无权限访问该资源",
+    ErrForbidden: "无权限使用该功能",
 
     ErrNotFound:        "资源不存在",
     ErrUserNotFound:    "用户不存在",
@@ -1817,7 +1817,7 @@ func AutoMigrate(db *gorm.DB) error {
 | 4013 | 401 | 用户名或密码错误 |
 | 4014 | 401 | 刷新令牌无效，请重新登录 |
 | 4015 | 401 | 原密码不正确 |
-| 4030 | 403 | 无权限访问该资源（功能越权） |
+| 4030 | 403 | 无权限使用该功能（功能越权） |
 | ~~4031~~ | — | ~~该人设不属于当前用户~~（已废弃：资源越权按「人设不存在」返回 4043） |
 | 4040 | 404 | 资源不存在 |
 | 4041 | 404 | 用户不存在 |
