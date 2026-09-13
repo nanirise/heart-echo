@@ -4,6 +4,7 @@
 !.env.example
 *.pem
 *.key
+deploy/.env
 
 # ===== Node / 前端 =====
 node_modules/
