@@ -9,9 +9,9 @@
 
 | # | 步骤 | 产物 | 完成标准 | 状态 |
 |---|---|---|---|---|
-| 1 | 目录骨架 | `backend/{cmd,internal,pkg}` 下的包目录 | `go build ./...` 通过（空包也能编） | 未开始 |
-| 2 | **错误码（最高优先）** | `pkg/errcode/errcode.go`、`errcode_test.go` | `go test ./pkg/errcode/` 通过，三集合一致 | 未开始 |
-| 3 | **统一响应** | `pkg/response/response.go` | `Fail()` 签名不含 message 参数 | 未开始 |
+| 1 | 目录骨架 | `backend/{cmd,internal,pkg}` 下的包目录 | `go build ./...` 通过（空包也能编） | 🔶 部分：`pkg/{errcode,response}` 已建；`cmd/server`、`internal/{config,middleware,dto,handler,service,repository}`、`pkg/{logger,jwt}` 尚未创建 |
+| 2 | **错误码（最高优先）** | `pkg/errcode/errcode.go`、`errcode_test.go` | `go test ./pkg/errcode/` 通过，三集合一致 | ✅ 已完成（PR #12 合入 develop） |
+| 3 | **统一响应** | `pkg/response/response.go` | `Fail()` 签名不含 message 参数 | ✅ 已完成（PR #12 合入 develop） |
 | 4 | 日志封装 | `pkg/logger/logger.go` | 提供 `*zap.Logger`，可被中间件注入 | 未开始 |
 | 5 | JWT 基础包 | `pkg/jwt/jwt.go` | Access 2h / Refresh 7d，含 `TokenType` | 未开始 |
 | 6 | 配置加载 | `internal/config/config.go` | 从环境变量读到 `DB_*` / `JWT_SECRET` / `AI_SERVICE_*` | 未开始 |
@@ -23,6 +23,22 @@
 **优先级说明**：**Step 2 → 3 优先于其余全部**。成员 2 的 spec 把 `pkg/response` 与 `pkg/errcode` 标为「待确认」，这是当前并行度最大的阻塞点；`pkg/response` 的类型又依赖 `pkg/errcode`，所以顺序不能倒。
 
 **Step 8 放最后**：装配层要 import 到上面所有包，先写它会反复返工。
+
+### 1.1 PR 划分
+
+**一个 spec = 一个大功能，不是一次交付。** 大功能按「能独立验证、能单独 review」切成多个 PR，每个 PR 一次只做一件事（协作 §4.7、§3.3）。
+
+| PR | 步骤 | 内容 | 状态 |
+|---|---|---|---|
+| #12 | Step 2–3 | `pkg/errcode` + `pkg/response` | ✅ 已合入 develop |
+| 待开 | Step 4–5 | `pkg/logger` + `pkg/jwt` | 代码已完成 |
+| 待开 | Step 6–7 | `internal/config` + 中间件 ×5 | 未开始 |
+| 待开 | Step 8–10 | 路由装配 + `.env.example` + 冒烟验收 | 未开始 |
+
+**切分判据**：后续步骤只会「**使用**」而不会「**改动**」的部分，就可以先合。
+
+- 可以提前合 —— `pkg/logger` / `pkg/jwt`：Step 6–10 全都只是消费它们，已经定型
+- 不能提前合 —— Step 8 的 `router.go`：它是所有包的汇合点，必须等中间件定稿
 
 ## 2. 文件清单
 
@@ -92,3 +108,6 @@
 | 日期 | 进展 | 阻塞 |
 |---|---|---|
 | 2026-09-13 | spec / plan 起草，等待审核 | 无（`model/*.go` 未交付但不阻塞本功能） |
+| 2026-09-13 | Step 2 `pkg/errcode`、Step 3 `pkg/response` 完成，PR #12 合入 develop | 无 |
+| 2026-09-13 | 错误码规则统一：`4031` 废弃、资源越权 `4043`、功能越权 `4030`；PR #13 修正 `4030` 文案 | 待成员 2、成员 3 同步各自文档 |
+| 2026-09-13 | 按实际状态更新 Step 1-3 的状态列 | 无 |
