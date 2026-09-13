@@ -116,7 +116,7 @@ if res.Error != nil { /* errcode.Wrap(ErrDBFailed, ...) */ }
 ### 3.3 Service（步骤 6）
 
 - 签名收 `context.Context`，**不出现 `*gin.Context`**（红线 7）。
-- **未命中一律 `errcode.New(errcode.ErrNotFound)`（4043）**，不区分"不属于你"与"不存在"（spec §5.2：资源越权 → `4043`）。**不要**写存在性探针，**也永远不要返回 `4030`**（那是功能越权的码，本模块没有该场景）。
+- **未命中一律 `errcode.New(errcode.ErrPersonaNotFound)`（4043）**，不区分"不属于你"与"不存在"（spec §5.2：资源越权 → `4043`）。**不要**写存在性探针，**也永远不要返回 `4030`**（那是功能越权的码，本模块没有该场景）。
 - 错误一律 `errcode.New` / `errcode.Wrap`，**不拼接自定义文案**（红线 6）。
 - `userID == 0` 要当错误拦住：`0` 说明上游鉴权失败，**不能拿它去查库**，返回 `4010`（spec §5.1 ①）。
 
@@ -275,7 +275,7 @@ grep -rn "response.Fail"        internal/handler/persona_handler.go
 grep -rn "Save("                internal/repository/persona_repo.go
 grep -rnE "\"(403[0-9]|404[0-9]|400[0-9])\"" internal/ | grep -i persona
 grep -rnE "4030|4043|ErrPersonaNotFound" internal/service internal/repository internal/handler
-#    ↑ 期望无输出：越权与不存在都只走 ErrNotFound(4043)（spec §5.2）
+#    ↑ 期望无输出：越权与不存在都只走 ErrPersonaNotFound(4043)（spec §5.2）
 grep -rn "type PageResult"      internal/dto/     # 期望只有 1 行
 
 # 9) 红线 1 自查：不许有密钥进入本次改动
