@@ -3,7 +3,7 @@
 > 对应 spec：[spec.md](spec.md) ｜ 分支：`feature/backend-persona-model`
 > 负责人：成员 3 ｜ 创建：2026-09-13 ｜ 最后更新：2026-09-13（第 4 版：模型层落地 + 切断外键 `bigserial` 污染）
 
-> ⚠️ 本功能遵循队长 2026-09-13 的**通用错误码规则**：**资源越权 → `4040`**（隐藏资源存在性）、**功能越权 → `4031`**。人设端点属资源越权，故 `:id` 未命中一律 `4040`（spec §5.2）。
+> ⚠️ 本功能遵循队长 2026-09-13 的**通用错误码规则**：**资源越权 → `4043`**（隐藏资源存在性）、**功能越权 → `4030`**。人设端点属资源越权，故 `:id` 未命中一律 `4043`（spec §5.2）。
 > `API_CONTRACT.md` / `AGENTS.md` 是**团队全局文件，本分支不直接改**——由用户去群里广播、队长同意后统一更新。**全局同步完成前不合并 PR**。见步骤 10。
 
 ---
@@ -18,11 +18,11 @@
 | 3 | 建表 | `internal/model/migrate.go` | `AutoMigrate` 追加 `&Persona{}`、`&ProactiveSetting{}`，顺序在 `&User{}` 之后；`\d personas` 有 CASCADE 外键 | 步骤 1、2 | 未开始 |
 | 4 | 请求/响应结构 | `internal/dto/persona_dto.go` | 4 个结构体；camelCase 对齐契约 §4；`familiarity` 拍平逻辑在此 | 步骤 1 | 未开始 |
 | 5 | **仓储层** | `internal/repository/persona_repo.go`、`internal/repository/proactive_repo.go` | 方法签名全部强制带 `userID uint64` 与事务句柄；**不存在**"按 id 单查"或"判断存在性"的方法 | 步骤 1、2 | 未开始 |
-| 6 | **业务层** | `internal/service/persona_service.go` | 未命中一律 `4040`；**创建走事务**（人设 + 配置同成同败）；不依赖 `*gin.Context` | 步骤 4、5 + 成员 1 的 `pkg/errcode` | 未开始 |
+| 6 | **业务层** | `internal/service/persona_service.go` | 未命中一律 `4043`；**创建走事务**（人设 + 配置同成同败）；不依赖 `*gin.Context` | 步骤 4、5 + 成员 1 的 `pkg/errcode` | 未开始 |
 | 7 | **HTTP 层** | `internal/handler/persona_handler.go` | 薄；含 `RegisterPersonaRoutes`；错误 `_ = c.Error(err)` 上抛 | 步骤 6 + `pkg/response` + `middleware` | 未开始 |
 | 8 | 路由挂载 | `router.go`（成员 1 的文件） | 群里同步后加一行，**不要与成员 1 同时改** | 步骤 7 | 未开始 |
-| 9 | 越权 / 级联 / 事务专项验证 | — | spec §8 的 20 项验收逐条打勾（含「不产生 `4031`」与「`state` 不是 base64」） | 步骤 8 | 未开始 |
-| 10 | **规则广播 + 全局文件同步（阻塞合并，不由我做）** | 群里广播；`API_CONTRACT.md`、`AGENTS.md` **由队长 / 成员 1 改** | 规则已广播并被接受；全局文件按 spec §5.2 表同步（§4 错误码 `4040`、§12 登记 + 版本号、§2 的 `4031` 文案、AGENTS §4.3）；**本分支保持不动这两个文件** | 步骤 9 | 未开始 |
+| 9 | 越权 / 级联 / 事务专项验证 | — | spec §8 的 20 项验收逐条打勾（含「不产生 `4030`」与「`state` 不是 base64」） | 步骤 8 | 未开始 |
+| 10 | **规则广播 + 全局文件同步（阻塞合并，不由我做）** | 群里广播；`API_CONTRACT.md`、`AGENTS.md` **由队长 / 成员 1 改** | 规则已广播并被接受；全局文件按 spec §5.2 表同步（§4 错误码 `4043`、§12 登记 + 版本号、§2 的 `4030` 文案、AGENTS §4.3）；**本分支保持不动这两个文件** | 步骤 9 | 未开始 |
 | 11 | **人工审查 + PR** | `docs/dev_notes/persona_model_notes.md`、PR | §4 的审查清单全过；至少 1 人 Approve | 步骤 9、10 | 未开始 |
 
 **优先级与阻塞说明**：步骤 0-5 **不等任何人**，现在就能做完——这是本功能的关键路径。步骤 6-8 依赖成员 1 尚未交付的 `pkg/response` / `pkg/errcode` / `internal/middleware`（见 spec §7.1），**在它们落地前不要去自己造一份**（红线：不 Own 的东西不要动，造了必冲突）。等待期间用 §4.4 里那几条 SQL 直接对 PG 验证仓储层。
@@ -106,7 +106,7 @@ res := db.WithContext(ctx).Model(&model.Persona{}).
         "speaking_style":   req.SpeakingStyle,
     })
 if res.Error != nil { /* errcode.Wrap(ErrDBFailed, ...) */ }
-// 返回 res.RowsAffected，由 service 判 4040；0 绝不能当成功
+// 返回 res.RowsAffected，由 service 判 4043；0 绝不能当成功
 ```
 
 > `Updates` 传 `map` 而非 struct：传 struct 时 GORM **忽略零值字段**，`name` 传空串会被静默跳过（这里虽然 `required` 拦住了，但别依赖另一层的校验来保证这一层的行为）。`RowsAffected == 0` 要向上暴露成"未命中"，**不能当成成功**——否则改别人的数据会返回 200。
@@ -116,7 +116,7 @@ if res.Error != nil { /* errcode.Wrap(ErrDBFailed, ...) */ }
 ### 3.3 Service（步骤 6）
 
 - 签名收 `context.Context`，**不出现 `*gin.Context`**（红线 7）。
-- **未命中一律 `errcode.New(errcode.ErrNotFound)`（4040）**，不区分"不属于你"与"不存在"（spec §5.2：资源越权 → `4040`）。**不要**写存在性探针，**也永远不要返回 `4031`**（那是功能越权的码，本模块没有该场景）。
+- **未命中一律 `errcode.New(errcode.ErrNotFound)`（4043）**，不区分"不属于你"与"不存在"（spec §5.2：资源越权 → `4043`）。**不要**写存在性探针，**也永远不要返回 `4030`**（那是功能越权的码，本模块没有该场景）。
 - 错误一律 `errcode.New` / `errcode.Wrap`，**不拼接自定义文案**（红线 6）。
 - `userID == 0` 要当错误拦住：`0` 说明上游鉴权失败，**不能拿它去查库**，返回 `4010`（spec §5.1 ①）。
 
@@ -202,7 +202,7 @@ func (s *personaService) Create(ctx context.Context, userID uint64, req *dto.Cre
 | `dto/persona_dto.go` | 有没有偷偷声明 `userId` / `state` / `familiarity`；camelCase 是否逐字对齐契约 | 与契约 §4 的 JSON 示例并排比对，字段名一个字母都不差 |
 | `repository/persona_repo.go` | **每个方法签名是否都带 `userID uint64`**；有没有 `db.First(&p, id)` 形态的裸查询；有没有 `ExistsByID`；更新是否用了 `Save(` | `grep -nE "Save\(|First\(&|ExistsBy" persona_repo.go` 无业务命中 |
 | `repository/proactive_repo.go` | 播种函数是否**接受 `tx *gorm.DB`** 而不是自取包级 `db` | 参数表里有 `tx`；函数体内是 `tx.WithContext(ctx)` |
-| `service/persona_service.go` | 未命中是否统一 `4040`（**不出现 4031/4043**）；事务是否用 `db.Transaction`；是否引了 `gin`；是否出现裸数字错误码 | `grep -n "gin" persona_service.go` 无结果；`grep -nE "\b(403[0-9]\|404[0-9]\|400[0-9])\b"` 无结果 |
+| `service/persona_service.go` | 未命中是否统一 `4043`（**不出现 4030/4043**）；事务是否用 `db.Transaction`；是否引了 `gin`；是否出现裸数字错误码 | `grep -n "gin" persona_service.go` 无结果；`grep -nE "\b(403[0-9]\|404[0-9]\|400[0-9])\b"` 无结果 |
 | `handler/persona_handler.go` | 是否 `_ = c.Error(err)` 上抛；有没有 `response.Fail`；`userID` 是否只从 `c` 的 JWT 上下文取 | `grep -n "response.Fail" persona_handler.go` 无结果 |
 | `router.go` | 只加了一行，没动别人的行 | `git diff router.go` 只有 1 行新增 |
 
@@ -210,11 +210,11 @@ func (s *personaService) Create(ctx context.Context, userID uint64, req *dto.Cre
 
 | # | 高危点 | 为什么会错 | 我怎么验 |
 |---|---|---|---|
-| 1 | **资源越权（`4040`）** | "先查出来再在 Go 里比"的写法看起来逻辑完整，漏掉 `if` 却在 review 中极难发现；写了 `ExistsByID` 就白增泄漏面；照旧契约把 `4031` 写回来等于没落地这条规则 | 用**另一个账号的 Token** 打 `PUT` / `DELETE`，必须 `4040`；再用不存在的 id 打，必须拿到**同码同文案**的 `4040`；`grep` 确认没有裸 id 查询、没有探针、**没有任何 `4031`** |
+| 1 | **资源越权（`4043`）** | "先查出来再在 Go 里比"的写法看起来逻辑完整，漏掉 `if` 却在 review 中极难发现；写了 `ExistsByID` 就白增泄漏面；照旧契约把 `4030` 写回来等于没落地这条规则 | 用**另一个账号的 Token** 打 `PUT` / `DELETE`，必须 `4043`；再用不存在的 id 打，必须拿到**同码同文案**的 `4043`；`grep` 确认没有裸 id 查询、没有探针、**没有任何 `4030`** |
 | 2 | **`state` 被覆盖** | `Save()` 或 `Updates` 传全字段 struct 都会静默清空 JSONB | 手工把 `state` 改成 `{"familiarity":42,"self_note":"x"}` → `PUT` → 两个键都还在、`familiarity` 仍 42 |
 | 3 | **`NULLS LAST` 漏写** | Postgres 的 `DESC` **默认是 `NULLS FIRST`**，写错的排序语义与需求正好相反，但页面看着"正常" | 新建一个从未聊过的人设，确认它排在列表**最后** |
 | 4 | **级联删除没建出来** | 只写标量 `UserID` 时 GORM 不建外键，删除人设会**留下孤儿消息与孤儿配置行** | `\d personas` / `\d proactive_settings` 看 FK 是否带 `ON DELETE CASCADE`；删人设后数两张子表 |
-| 5 | **错误码硬编码 / 用错码** | AI 容易直接写 `c.JSON(404, ...)` 或中文文案字面量；也容易**照着契约旧文把 `4031` 写回来**（那是功能越权的码） | `grep` 错误码数字与中文文案，必须全部指向 `errcode.*` 常量；且人设模块**不应出现 `4031`/`4043`**——越权与不存在都只有一个答案 `4040` |
+| 5 | **错误码硬编码 / 用错码** | AI 容易直接写 `c.JSON(404, ...)` 或中文文案字面量；也容易**照着契约旧文把 `4030` 写回来**（那是功能越权的码） | `grep` 错误码数字与中文文案，必须全部指向 `errcode.*` 常量；且人设模块**不应出现 `4030`/`4043`**——越权与不存在都只有一个答案 `4043` |
 | 6 | **事务没真正回滚** | 事务内用包级 `db` 而非 `tx`，或先提交人设再插配置——**代码看上去有 `Transaction`，实际没生效** | 用 §4.4 的"播种失败"实验：让播种插入报错，确认 `personas` **不留新行** |
 
 ### 4.4 必须亲眼看到的证据（不接受"我觉得没问题"）
@@ -253,14 +253,14 @@ docker compose -f deploy/docker-compose.dev.yml exec postgres \
 # 4) 排序：从未聊过的人设必须排在最后
 curl -s "localhost:8080/api/v1/personas?page=1&pageSize=20" -H "Authorization: Bearer $TOKEN"
 
-# 5) 越权与不存在：两者必须是同一个 4040
+# 5) 越权与不存在：两者必须是同一个 4043
 curl -s -X PUT "localhost:8080/api/v1/personas/1" -H "Authorization: Bearer $TOKEN_B" \
   -H 'Content-Type: application/json' \
   -d '{"name":"x","personalityDesc":"y","speakingStyle":"z"}'
 curl -s -X DELETE "localhost:8080/api/v1/personas/1"      -H "Authorization: Bearer $TOKEN_B"
 curl -s -X DELETE "localhost:8080/api/v1/personas/999999" -H "Authorization: Bearer $TOKEN"
-#    三条都该是 code=4040、message 相同 —— 外部无法区分
-#    另外：全程不应出现 4031 —— 那是「功能越权」的码，本模块没有该场景（spec §5.2）
+#    三条都该是 code=4043、message 相同 —— 外部无法区分
+#    另外：全程不应出现 4030 —— 那是「功能越权」的码，本模块没有该场景（spec §5.2）
 
 # 6) 无 Token → 4010；缺 name → 4001；空列表 → list 为 []
 curl -s localhost:8080/api/v1/personas
@@ -274,8 +274,8 @@ curl -s localhost:8080/api/v1/personas
 grep -rn "response.Fail"        internal/handler/persona_handler.go
 grep -rn "Save("                internal/repository/persona_repo.go
 grep -rnE "\"(403[0-9]|404[0-9]|400[0-9])\"" internal/ | grep -i persona
-grep -rnE "4031|4043|ErrPersonaNotFound" internal/service internal/repository internal/handler
-#    ↑ 期望无输出：越权与不存在都只走 ErrNotFound(4040)（spec §5.2）
+grep -rnE "4030|4043|ErrPersonaNotFound" internal/service internal/repository internal/handler
+#    ↑ 期望无输出：越权与不存在都只走 ErrNotFound(4043)（spec §5.2）
 grep -rn "type PageResult"      internal/dto/     # 期望只有 1 行
 
 # 9) 红线 1 自查：不许有密钥进入本次改动
@@ -290,7 +290,7 @@ git status --short && git diff --cached --name-only | grep -E '\.env$|\.key$|\.p
 |---|---|
 | 仓储层存在**不带 `user_id`** 的业务查询 | 防线是结构性的，逐处打补丁会漏；必须让不安全的方法不存在 |
 | 出现 `ExistsByID` / 按 id 单查的探针 | "存在性"一进入代码就有了泄漏面，且与 §5.2 的决定直接矛盾 |
-| 未命中返回 `4031` / `4043` | 违反队长规则（**资源越权 → `4040`**）；`4031` 是功能越权的码、本模块无此场景，`4043` 与 `4040` 并存**会泄漏存在性** |
+| 未命中返回 `4030` / `4043` | 违反队长规则（**资源越权 → `4043`**）；`4030` 是功能越权的码、本模块无此场景，`4043` 与 `4043` 并存**会泄漏存在性** |
 | **创建人设不是单事务**（用了包级 `db`、或分两次提交） | 会留下孤儿配置行，正是本版决策要消灭的问题；且这类 bug 在演示时表现为"某个伴侣设置页打不开" |
 | 更新用了 `Save()` 或全字段 `Updates(struct)` | 覆盖 `state` 是数据损坏，且**不可逆**；必须改成指定列 |
 | 未命中时返回成功（200） | 越权写入被伪装成成功，比报错危险 |
@@ -306,8 +306,8 @@ git status --short && git diff --cached --name-only | grep -E '\.env$|\.key$|\.p
 | 风险 | 影响 | 对策 |
 |---|---|---|
 | 成员 1 的公共层尚未交付 | 步骤 6-8 无法编译，阻塞联调 | 先做步骤 0-5；**不要自造 `pkg/*`**；把等待时间用于 §4.4 的 SQL 级验证 |
-| **全局文件未同步就合并** | 成员 2 的 Mock 按 `4031`/`4043` 写，联调时错误分支全对不上；后续 AI 代理照 `AGENTS.md` §4.3 把 `4031` 写回来 | 步骤 10：**先广播规则**，再等队长 / 成员 1 更新 `API_CONTRACT.md` + `AGENTS.md`（spec §5.2 的 7 项表）；**未同步不得合并**。本分支不碰这两个文件 |
-| 通用规则只改了人设模块，契约里另 10 个归属校验端点仍带 `4031` | 长期"半套规则"共存：同一个 `personaId` 归属失败，在不同端点返回不同码，前端与测试都难以统一 | 广播时**把 10 个端点的逐行清单一起交出去**（spec §5.2 末尾的表格，含契约行号与改法），由队长排一次统一整改；本 PR 只做 §4 |
+| **全局文件未同步就合并** | 成员 2 的 Mock 按 `4030`/`4043` 写，联调时错误分支全对不上；后续 AI 代理照 `AGENTS.md` §4.3 把 `4030` 写回来 | 步骤 10：**先广播规则**，再等队长 / 成员 1 更新 `API_CONTRACT.md` + `AGENTS.md`（spec §5.2 的 7 项表）；**未同步不得合并**。本分支不碰这两个文件 |
+| 通用规则只改了人设模块，契约里另 10 个归属校验端点仍带 `4030` | 长期"半套规则"共存：同一个 `personaId` 归属失败，在不同端点返回不同码，前端与测试都难以统一 | 广播时**把 10 个端点的逐行清单一起交出去**（spec §5.2 末尾的表格，含契约行号与改法），由队长排一次统一整改；本 PR 只做 §4 |
 | `state` 的写入方（对话链路）未定 | 本功能写 `{"familiarity":0}`，对话链路要 `+1`，两边格式不一致会互相踩 | 本功能只初始化、不累加；把 `state` 的 schema 约定写进 spec §3.3，交付时同步给成员 1 |
 | 播种的默认值与主动消息模块不一致 | 两处各写一套默认值，用户改过配置后被覆盖 | 默认值只在 DDL 与 `CreateDefaultSettings` 一处定义；主动消息模块的 `GET` 直接读表，不写第二套兜底默认 |
 | `proactive_repo.go` 后续被主动消息模块大改 | 函数签名变了，本功能的调用点要跟着改 | 播种函数签名保持 `(ctx, tx, userID, personaID)`，不要加可选参数 |
@@ -320,7 +320,7 @@ git status --short && git diff --cached --name-only | grep -E '\.env$|\.key$|\.p
 | 日期 | 进展 | 阻塞 |
 |---|---|---|
 | 2026-09-13 | spec / plan 第 1 版落地 | 成员 1 的 `pkg/response` / `pkg/errcode` / `middleware` 尚未进仓库（仅阻塞步骤 6-8） |
-| 2026-09-13 | 并入 4 项决策：`PageResult` 位置、ID 统一 `uint64`、创建时同事务播种 `proactive_settings`（新增步骤 0/2/10 与 §3.4）、`:id` 未命中统一 `4040`（契约变更，新增步骤 10 阻塞合并） | 同上；**契约变更待广播** |
-| 2026-09-13 | 套用队长「通用错误码规则」（资源越权 → `4040` / 功能越权 → `4031`）：步骤 10 改为「广播规则 + 全局文件由队长/成员 1 改，本分支不动」；§3.3 / §4.3 #1 #5 / §4.4 / §4.5 / §5 同步措辞；新增「半套规则」风险行 | **等用户群里广播**；广播 + 全局同步完成前不合并（步骤 10） |
+| 2026-09-13 | 并入 4 项决策：`PageResult` 位置、ID 统一 `uint64`、创建时同事务播种 `proactive_settings`（新增步骤 0/2/10 与 §3.4）、`:id` 未命中统一 `4043`（契约变更，新增步骤 10 阻塞合并） | 同上；**契约变更待广播** |
+| 2026-09-13 | 套用队长「通用错误码规则」（资源越权 → `4043` / 功能越权 → `4030`）：步骤 10 改为「广播规则 + 全局文件由队长/成员 1 改，本分支不动」；§3.3 / §4.3 #1 #5 / §4.4 / §4.5 / §5 同步措辞；新增「半套规则」风险行 | **等用户群里广播**；广播 + 全局同步完成前不合并（步骤 10） |
 | 2026-09-13 | **步骤 0-3 完成**：`jsonb.go`（自写 JSONB）、`persona.go`、`migrate.go`（`User` → `Persona`）落地；`go.mod` 清理掉 `datatypes` 与 MySQL 依赖。**顺带修掉两个实测缺陷**：外键被关联复制污染成 `bigserial`（改 `user.go` / `persona.go` 的 `ID` tag 为 `type:bigint`）、自写 `JSONB` 漏 `MarshalJSON` 会让 `state` 变成 base64。已在真库验证 schema 与 DDL 一致 | 无。步骤 4-5 可立即开工；步骤 6-8 仍等成员 1 的 `pkg/*` |
 | 2026-09-13 | **步骤 3 补完**：新增 `backend/cmd/migrate/main.go`（读 `SCHEMA_CHECK_DSN` → 迁移 → 退出码），`gorm.io/driver/postgres` 随之进 `go.mod`。**在一个全新空库上从零建表验证通过**：8 列类型/可空性/默认值、`fk_personas_user ... ON DELETE CASCADE`（实测删 `users` 行确实连带删掉 `personas` 行）、`idx_personas_user_last_msg`、序列只有 `users_id_seq` + `personas_id_seq`（无 `personas_user_id_seq`）、重复执行幂等。验证用的临时库已删除，未触碰 `heart_echo` | 变量名 `SCHEMA_CHECK_DSN` 与技术文档 §4.6 规划的 `DB_*` 不是同一套，**待队长拍板是否统一**（见 §3.6） |
