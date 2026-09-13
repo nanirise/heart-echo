@@ -12,14 +12,14 @@
 | 1 | 初始化工程清单 | `frontend/package.json` | JSON 有效，依赖覆盖 Vue 全家桶 | 完成 |
 | 2 | 严格 TS 配置 | `frontend/tsconfig.json` | `strict` 开启，`@/*` 别名已声明 | 完成 |
 | 3 | 构建与页面入口 | `vite.config.ts`、`index.html` | 别名两侧一致，端口 5173 | 完成 |
-| 3.5 | 安装依赖 | `node_modules/`、`package-lock.json` | `npm install` 无 ERESOLVE | 阻塞（环境问题） |
+| 3.5 | 安装依赖 | `node_modules/`、`package-lock.json` | `npm install` 无 ERESOLVE | 完成 |
 | 4 | **数据契约** | `src/types/api.ts` | 与后端 JSON tag 逐字段对齐 | 准备中 |
 | 5 | 错误码类型 | `src/types/errcode.ts` | 覆盖全部约定错误码，禁硬编码数字 | 未开始 |
 | 6 | 登录态持久化 | `src/stores/auth.ts` | 刷新页面登录态不丢，登出可清空 | 未开始 |
 | 7 | **请求层（核心）**| `src/api/request.ts` | 拦截器 + 4012 刷新重放 + 并发只刷一次 | 未开始 |
 | 8 | 路由与守卫 | `router/index.ts`、`router/guards.ts` | 未登录跳转带 `redirect` | 未开始 |
-| 9 | 应用外壳 | `main.ts`、`App.vue`、`layouts/MainLayout.vue` | 页面能渲染，非白屏 | 未开始 |
-| 10 | 冒烟验收 | — | `tsc --noEmit` 与 `build` 双通过 | 未开始 |
+| 9 | 应用外壳 | `main.ts`、`App.vue`、`layouts/MainLayout.vue` | 页面能渲染，非白屏 |部分完成（main.ts / App.vue；MainLayout.vue 待后续分支）|
+| 10 | 冒烟验收 | — | `tsc --noEmit` 与 `build` 双通过 | 完成 |
 
 **优先级说明**：**Step 4 优先于 Step 5-9**。`types/api.ts` 解锁成员 3，越早交付并行度越高。宁可后面几步慢一点，也要先把它推上去。
 
@@ -75,3 +75,4 @@ token 的读写统一走 `stores/auth.ts`，`request.ts` 不直接操作 localSt
 | 日期 | 进展 | 阻塞 |
 |---|---|---|
 | 2026-09-12 | Step 1-3 完成并推送；spec/plan 补记 | `npm install` 环境问题（esbuild 调 cmd.exe 失败） |
+| 2026-09-13 | Step 3.5 / 9（部分）/ 10 完成；同步 develop 并 rebase 到 0fea9f0 | 无 |
