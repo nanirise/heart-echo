@@ -1,7 +1,7 @@
 # plan · 人设 CRUD（Persona CRUD）
 
 > 对应 spec：[spec.md](spec.md) ｜ 分支：`feature/backend-persona-model`
-> 负责人：成员 3 ｜ 创建：2026-09-13 ｜ 最后更新：2026-09-13（第 3 版：套用队长「通用错误码规则」）
+> 负责人：成员 3 ｜ 创建：2026-09-13 ｜ 最后更新：2026-09-13（第 4 版：模型层落地 + 切断外键 `bigserial` 污染）
 
 > ⚠️ 本功能遵循队长 2026-09-13 的**通用错误码规则**：**资源越权 → `4040`**（隐藏资源存在性）、**功能越权 → `4031`**。人设端点属资源越权，故 `:id` 未命中一律 `4040`（spec §5.2）。
 > `API_CONTRACT.md` / `AGENTS.md` 是**团队全局文件，本分支不直接改**——由用户去群里广播、队长同意后统一更新。**全局同步完成前不合并 PR**。见步骤 10。
@@ -21,7 +21,7 @@
 | 6 | **业务层** | `internal/service/persona_service.go` | 未命中一律 `4040`；**创建走事务**（人设 + 配置同成同败）；不依赖 `*gin.Context` | 步骤 4、5 + 成员 1 的 `pkg/errcode` | 未开始 |
 | 7 | **HTTP 层** | `internal/handler/persona_handler.go` | 薄；含 `RegisterPersonaRoutes`；错误 `_ = c.Error(err)` 上抛 | 步骤 6 + `pkg/response` + `middleware` | 未开始 |
 | 8 | 路由挂载 | `router.go`（成员 1 的文件） | 群里同步后加一行，**不要与成员 1 同时改** | 步骤 7 | 未开始 |
-| 9 | 越权 / 级联 / 事务专项验证 | — | spec §8 的 19 项验收逐条打勾（含「不产生 `4031`」） | 步骤 8 | 未开始 |
+| 9 | 越权 / 级联 / 事务专项验证 | — | spec §8 的 20 项验收逐条打勾（含「不产生 `4031`」与「`state` 不是 base64」） | 步骤 8 | 未开始 |
 | 10 | **规则广播 + 全局文件同步（阻塞合并，不由我做）** | 群里广播；`API_CONTRACT.md`、`AGENTS.md` **由队长 / 成员 1 改** | 规则已广播并被接受；全局文件按 spec §5.2 表同步（§4 错误码 `4040`、§12 登记 + 版本号、§2 的 `4031` 文案、AGENTS §4.3）；**本分支保持不动这两个文件** | 步骤 9 | 未开始 |
 | 11 | **人工审查 + PR** | `docs/dev_notes/persona_model_notes.md`、PR | §4 的审查清单全过；至少 1 人 Approve | 步骤 9、10 | 未开始 |
 
@@ -33,8 +33,10 @@
 |---|---|---|
 | `backend/internal/dto/common_dto.go` | `PageResult[T]`，**全项目五处分页共用** | **成员 1**（messages / memory）、成员 3（moments / schedules） |
 | `backend/internal/model/persona.go` | `personas` 的 GORM 实体 | **成员 1**（`message_repo` 引 `Persona`）、成员 3 |
+| `backend/internal/model/jsonb.go` | 自写 `JSONB` 类型，**零新增依赖** | **成员 1**（`user_profile.profile_data` 直接复用，不要再引 `gorm.io/datatypes`）、成员 3 |
 | `backend/internal/model/proactive_setting.go` | `proactive_settings` 的 GORM 实体 | 成员 3（主动消息模块） |
-| `backend/internal/model/migrate.go` | 建表入口 | 成员 1（`main.go` 调用） |
+| `backend/internal/model/migrate.go` | 建表入口（`AutoMigrate` 函数） | 成员 1（`main.go` 调用） |
+| `backend/cmd/migrate/main.go` | 独立的迁移命令入口：读 `SCHEMA_CHECK_DSN` → `gorm.Open` → `model.AutoMigrate` | 成员 1（如需并入 `cmd/server` 启动流程，复用 `model.AutoMigrate` 即可；**变量名不同见 §3.6**） |
 | `backend/internal/dto/persona_dto.go` | 请求 / 响应结构 | 成员 2（据此写 `types/persona.ts` 与 Mock） |
 | `backend/internal/repository/persona_repo.go` | 人设数据访问 | 成员 3（主动消息定时任务要读 `last_message_at`） |
 | `backend/internal/repository/proactive_repo.go` | 主动消息配置数据访问；**本功能只用其"播种默认行"一个函数** | 成员 3（主动消息模块在此文件继续加 `Get` / `Upsert`） |
@@ -51,7 +53,7 @@
 字段与 tag 的对应（完整对照表见 spec §3.2），**三处最容易翻车**：
 
 1. **`user_id` 用 `json:"-"`**——契约 §4 的 Persona 实体里没有 `userId`。它同时被 `User` 的外键关联引用，是越权防线的载体，不是响应字段。
-2. **`state` 用 `datatypes.JSON`**，不要 `string`、不要固定 struct。固定 struct 会在读写中**静默丢掉未知键**（§5.6 预留的 `self_note` 就这么没的）。
+2. **`state` 用 `model.JSONB`**（自写类型，见 `internal/model/jsonb.go`），不要 `string`、不要固定 struct。固定 struct 会在读写中**静默丢掉未知键**（§5.6 预留的 `self_note` 就这么没的）。
 3. **必须声明 `User User` 关联字段**，否则 GORM **不建外键约束**——"删人设级联删消息"这条验收项直接不成立。这个字段只为生成约束存在，同样 `json:"-"`。
 
 ```go
@@ -132,7 +134,7 @@ func (s *personaService) Create(ctx context.Context, userID uint64, req *dto.Cre
         Name:            req.Name,
         PersonalityDesc: req.PersonalityDesc,
         SpeakingStyle:   req.SpeakingStyle,
-        State:           datatypes.JSON([]byte(`{"familiarity":0}`)),  // 显式初始化
+        State:           model.JSONB(`{"familiarity":0}`),  // 显式初始化
     }
 
     err := s.db.Transaction(func(tx *gorm.DB) error {
@@ -165,6 +167,13 @@ func (s *personaService) Create(ctx context.Context, userID uint64, req *dto.Cre
 - `familiarity` 的拍平（容错取 0）写法见 spec §4.6。
 - Handler 只做三件事：绑定 → 调 service → `response.Success`；出错 `_ = c.Error(err)` 后 `return`。**不写 `response.Fail`**。
 - `RegisterPersonaRoutes` 照总纲 §4.5 的样式写，`router.go` 由成员 1 加一行（或错开时间自己加）。
+
+### 3.6 建表命令与 DSN 变量名（步骤 3）
+
+- `backend/cmd/migrate/main.go` 是**独立的迁移入口**，不复用 `cmd/server`：迁移是低频、高风险动作，不该跟着服务启动跑一遍（生产环境尤其如此）。
+- 它读的是 **`SCHEMA_CHECK_DSN`**，而 `docs/TECH_DESIGN.md` §4.6 给 `backend/.env.example` 规划的是 `DB_HOST` / `DB_PORT` / `DB_USER` / `DB_PASSWORD` / `DB_NAME` 五个离散变量 —— **两者不是同一套**。这意味着：① 这个变量不会出现在 `.env.example` 里，跑之前要自己 `export`；② 以后 `cmd/server` 拼 DSN 时不要指望同一个变量名。
+- 统一改起来是**一行的事**（`main.go` 里 `os.Getenv` 的那一处）。是否统一、统一成哪个名字，**属于跨模块约定，需队长拍板后再动**，本分支不擅自改。
+- 不设默认 DSN、不写任何密码兜底（AGENTS.md 红线 1）：变量缺失就 `log.Fatal` 退出 1，宁可失败也不要"连到某个默认库"。
 
 ---
 
@@ -302,7 +311,8 @@ git status --short && git diff --cached --name-only | grep -E '\.env$|\.key$|\.p
 | `state` 的写入方（对话链路）未定 | 本功能写 `{"familiarity":0}`，对话链路要 `+1`，两边格式不一致会互相踩 | 本功能只初始化、不累加；把 `state` 的 schema 约定写进 spec §3.3，交付时同步给成员 1 |
 | 播种的默认值与主动消息模块不一致 | 两处各写一套默认值，用户改过配置后被覆盖 | 默认值只在 DDL 与 `CreateDefaultSettings` 一处定义；主动消息模块的 `GET` 直接读表，不写第二套兜底默认 |
 | `proactive_repo.go` 后续被主动消息模块大改 | 函数签名变了，本功能的调用点要跟着改 | 播种函数签名保持 `(ctx, tx, userID, personaID)`，不要加可选参数 |
-| 新增 `gorm.io/datatypes` 未广播 | `go.mod` 冲突 | 群里说一声；`go.mod` + `go.sum` 一并提交 |
+| ~~新增 `gorm.io/datatypes` 未广播~~ **已消除** | — | 改用自写的 `model.JSONB`，`go.mod` 里没有 `datatypes`、也没有任何 MySQL 依赖，与成员 1 接 PGX 时不再冲突。（`gorm.io/driver/postgres` + `pgx/v5` 已因 `cmd/migrate` 进入 `go.mod` —— 这正是成员 1 接 DB 层要用的那套，先落地反而省了他一次 `go get`） |
+| **外键列被关联复制污染成 `bigserial`** | 每张子表的 `user_id` 都会长出 `nextval` 默认值，与 DDL 不符，且漏传 `user_id` 的 INSERT 会静默拿到别人的 id | **已在源头切断**：`user.go` 与 `persona.go` 的 `ID` tag 由 `type:bigserial` 改为 `type:bigint`（保留 `autoIncrement`，渲染结果不变）。新增任何带外键的模型时，**被引用方的 `ID` 都不要写 `bigserial`** |
 | 契约文档 `state: {}` 与 `familiarity: 12` 的不一致 | 成员 2 写 Mock 时可能理解成独立列 | 实现后主动告知，避免前端 Mock 与真实响应结构不一致 |
 
 ## 6. 进度记录
@@ -312,3 +322,5 @@ git status --short && git diff --cached --name-only | grep -E '\.env$|\.key$|\.p
 | 2026-09-13 | spec / plan 第 1 版落地 | 成员 1 的 `pkg/response` / `pkg/errcode` / `middleware` 尚未进仓库（仅阻塞步骤 6-8） |
 | 2026-09-13 | 并入 4 项决策：`PageResult` 位置、ID 统一 `uint64`、创建时同事务播种 `proactive_settings`（新增步骤 0/2/10 与 §3.4）、`:id` 未命中统一 `4040`（契约变更，新增步骤 10 阻塞合并） | 同上；**契约变更待广播** |
 | 2026-09-13 | 套用队长「通用错误码规则」（资源越权 → `4040` / 功能越权 → `4031`）：步骤 10 改为「广播规则 + 全局文件由队长/成员 1 改，本分支不动」；§3.3 / §4.3 #1 #5 / §4.4 / §4.5 / §5 同步措辞；新增「半套规则」风险行 | **等用户群里广播**；广播 + 全局同步完成前不合并（步骤 10） |
+| 2026-09-13 | **步骤 0-3 完成**：`jsonb.go`（自写 JSONB）、`persona.go`、`migrate.go`（`User` → `Persona`）落地；`go.mod` 清理掉 `datatypes` 与 MySQL 依赖。**顺带修掉两个实测缺陷**：外键被关联复制污染成 `bigserial`（改 `user.go` / `persona.go` 的 `ID` tag 为 `type:bigint`）、自写 `JSONB` 漏 `MarshalJSON` 会让 `state` 变成 base64。已在真库验证 schema 与 DDL 一致 | 无。步骤 4-5 可立即开工；步骤 6-8 仍等成员 1 的 `pkg/*` |
+| 2026-09-13 | **步骤 3 补完**：新增 `backend/cmd/migrate/main.go`（读 `SCHEMA_CHECK_DSN` → 迁移 → 退出码），`gorm.io/driver/postgres` 随之进 `go.mod`。**在一个全新空库上从零建表验证通过**：8 列类型/可空性/默认值、`fk_personas_user ... ON DELETE CASCADE`（实测删 `users` 行确实连带删掉 `personas` 行）、`idx_personas_user_last_msg`、序列只有 `users_id_seq` + `personas_id_seq`（无 `personas_user_id_seq`）、重复执行幂等。验证用的临时库已删除，未触碰 `heart_echo` | 变量名 `SCHEMA_CHECK_DSN` 与技术文档 §4.6 规划的 `DB_*` 不是同一套，**待队长拍板是否统一**（见 §3.6） |

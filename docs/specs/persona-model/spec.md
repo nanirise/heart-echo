@@ -2,7 +2,7 @@
 
 > 功能名：persona-model ｜ 分支：`feature/backend-persona-model`
 > 负责人：成员 3（数据 + 人设 + 部署） ｜ 状态：设计完成，待实现
-> 创建：2026-09-13 ｜ 最后更新：2026-09-13（第 3 版：套用队长「通用错误码规则」）
+> 创建：2026-09-13 ｜ 最后更新：2026-09-13（第 4 版：模型层落地 + 切断外键 `bigserial` 污染）
 > 关联：[AGENTS.md](../../../AGENTS.md) ｜ [接口契约 §4](../../API_CONTRACT.md) ｜ [技术文档 §6.2 / §5.6](../TECH_DESIGN.md) ｜ [成员 3 任务书 §2](../dev/MEMBER_3_DATA_MOMENTS_DEPLOY.md)
 
 > ⚠️ **本功能遵循队长于 2026-09-13 明确的「通用错误码规则」**：**资源越权 → `4040`**（隐藏资源存在性）、**功能越权 → `4031`**。人设 CRUD 属于前者，故 `:id` 未命中一律 `4040`，见 §5.2。
@@ -25,6 +25,7 @@
 | 项 | 产物 |
 |---|---|
 | 数据模型 | `internal/model/persona.go`（GORM 实体，含外键级联声明） |
+| JSONB 类型 | `internal/model/jsonb.go`（自写，**零新增依赖**；`personas.state` 与 `user_profile.profile_data` 共用） |
 | 主动消息配置模型 | `internal/model/proactive_setting.go`（创建人设时同步播种一行） |
 | 建表 | `internal/model/migrate.go` 的 `AutoMigrate` 追加 `&Persona{}`、`&ProactiveSetting{}` |
 | 通用分页结构 | `internal/dto/common_dto.go`（`PageResult[T]`，**全项目五个分页端点共用**） |
@@ -77,7 +78,7 @@ CREATE INDEX idx_personas_user_last_msg ON personas(user_id, last_message_at DES
 | `name VARCHAR(50) NOT NULL` | `string` | `type:varchar(50);not null` | `name` | §4 |
 | `personality_desc TEXT NOT NULL` | `string` | `type:text;not null` | `personalityDesc` | §4 |
 | `speaking_style VARCHAR(255) NOT NULL` | `string` | `type:varchar(255);not null` | `speakingStyle` | §4 |
-| `state JSONB NOT NULL DEFAULT '{}'` | `datatypes.JSON` | `type:jsonb;not null;default:'{}'` | `state` | §4（原样透传） |
+| `state JSONB NOT NULL DEFAULT '{}'` | `model.JSONB` | `type:jsonb;not null;default:'{}'` | `state` | §4（原样透传） |
 | `last_message_at TIMESTAMPTZ`（可空） | `*time.Time` | `type:timestamptz` | `lastMessageAt` | §4（可 `null`） |
 | `created_at TIMESTAMPTZ NOT NULL` | `time.Time` | `type:timestamptz;not null;default:now();autoCreateTime` | `createdAt` | §4 |
 | —（**不是列**） | `int`（派生） | — | `familiarity` | §4（只读派生） |
@@ -99,7 +100,13 @@ CREATE INDEX idx_personas_user_last_msg ON personas(user_id, last_message_at DES
 | **写入时原样保留** | `PUT` 与 `DELETE` 路径**绝不触碰** `state` 列。§5 会说明为什么用 `Save()` 就会踩雷 |
 | **未知键必须活下来** | 技术文档 §5.6 预留了 `state.self_note`。所以**不能**把 `state` 定义成固定字段的 struct（读写一次就把未知键丢了），必须用原始 JSON 类型 |
 
-> **`datatypes.JSON` vs `json.RawMessage`**：`datatypes.JSON` 本质上就是 `json.RawMessage`（`type JSON json.RawMessage`）外加 GORM 的 `Value()` / `Scan()` 实现，是 GORM 官方对 JSONB 的答案。裸 `json.RawMessage` 走 GORM + pgx 写 `jsonb` 列时可能被当成 `bytea` 发送，报 `column "state" is of type jsonb but expression is of type bytea`。**本功能新增一个依赖 `gorm.io/datatypes`**，`go.mod` 与 `go.sum` 都要提交（群里说一声）。
+> **为什么自写一个 `model.JSONB` 而不用现成包**（实现见 `backend/internal/model/jsonb.go`）：
+>
+> - **不用 `json.RawMessage`**：它经 GORM + pgx 写 `jsonb` 列时会被当作 `bytea` 发送，报 `column "state" is of type jsonb but expression is of type bytea`。关键在 `Value()` 必须返回 `string(j)`，**不能返回 `[]byte(j)`**。
+> - **也不用 `gorm.io/datatypes`**：它会连带拖进 `gorm.io/driver/mysql`、`go-sql-driver/mysql`、`filippo.io/edwards25519` 等一串与本项目（纯 PostgreSQL）无关的依赖，并且与成员 1 后续接入 PGX 驱动时的 `go.mod` 改动互相冲突。
+> - **本功能零新增依赖**：`go.mod` 里只有 `gorm.io/gorm`。
+>
+> ⚠️ **`JSONB` 必须实现 `MarshalJSON` / `UnmarshalJSON`**：它的底层类型是 `[]byte`，而 `encoding/json` 对 `[]byte` 的默认行为是 **base64 编码**。少了这两个方法，响应体里的 `"state": {"familiarity": 0}` 会变成 `"state": "eyJmYW1pbGlh..."`，前端解析直接崩——而它照样能编译、能跑、能"演示"，只在看响应体时才暴露。（`json.RawMessage` 之所以没这个问题，正因为它自己实现了这两个方法。）
 
 ### 3.4 外键与索引
 
@@ -111,6 +118,13 @@ User User `gorm:"foreignKey:UserID;references:ID;constraint:OnDelete:CASCADE" js
 ```
 
 `ProactiveSetting` 对 `Persona` 的关联同理——**它的外键也要 `ON DELETE CASCADE`**，否则删人设会留下孤儿配置行。
+
+> ⚠️ **被引用方的 `ID` tag 不能写 `type:bigserial`**（实测踩过，已修）：
+> GORM 建 belongs-to 关联时，会把**被引用主键的 `DataType` 复制到外键字段**上（`schema/relationship.go` 的 `copyableDataType` 只检查类型串里有没有 `auto_increment` / `primary key`，而 `"bigserial"` 两者都没有，于是照抄）。而 Postgres 里 `bigserial` 的语义是「建序列 + 设为默认值」，结果 `personas.user_id` 被建成了
+> `bigint NOT NULL DEFAULT nextval('personas_user_id_seq')`——**既偏离 DDL，又让漏传 `user_id` 的 INSERT 静默拿到一个可能撞上真实用户 id 的序列值**。
+> **正确写法是 `type:bigint` + `autoIncrement`**：渲染结果仍是 `bigserial`（`users.id` 行为完全不变），但 `DataType` 是 `bigint`，复制到外键就是对的。
+> 在本字段上加 `autoIncrement:false` **压不住**它——改写发生在类型复制阶段，根本不看自增标记。
+> **这条对整个项目生效**：`chat_messages` / `user_memory` / `user_profile` / `schedules` / `ai_moments` / `proactive_settings` 的 `user_id` 全是同一个模式，新建模型时照此办理。
 
 | 索引 | 用途 | 写法 |
 |---|---|---|
@@ -261,7 +275,7 @@ User User `gorm:"foreignKey:UserID;references:ID;constraint:OnDelete:CASCADE" js
 | `PersonaResponse` | 同上 | `id` `name` `personalityDesc` `speakingStyle` `state` `familiarity` `lastMessageAt` `createdAt` | — |
 | `PersonaListResponse` | 同上 | `list []PersonaResponse` `total` `page` `pageSize`（或直接用 `PageResult[PersonaResponse]`） | — |
 
-**`familiarity` 的提取（定义在 dto 层，不写在 model 上）**：`state` 用 `datatypes.JSON` 原样保留，另起一个只含 `familiarity` 的小 struct 做一次 `json.Unmarshal` 取值：
+**`familiarity` 的提取（定义在 dto 层，不写在 model 上）**：`state` 用 `model.JSONB` 原样保留，另起一个只含 `familiarity` 的小 struct 做一次 `json.Unmarshal` 取值：
 
 ```go
 // 只解需要的键；其余未知键（如将来的 self_note）留在 State 原文里，不受影响
@@ -441,12 +455,14 @@ _ = json.Unmarshal(p.State, &s)   // 解析失败不报错，familiarity 取 0
 | 3 | `POST /personas` 同事务播种一行 `proactive_settings` | §4.3.1 |
 | 4 | `:id` 未命中统一返回 `4040`（不区分不属于你 / 不存在） | §5.2 |
 | 5 | **错误码按队长通用规则**：**资源越权 → `4040`**（隐藏资源存在性）、**功能越权 → `4031`**。人设 CRUD 属资源越权，故 `:id` 未命中一律 `4040`，且**不产生 `4031`** | §5.2 |
+| 6 | **JSONB 用自写的 `model.JSONB`**，不引入 `gorm.io/datatypes`：零新增依赖，避免与成员 1 接 PGX 时 `go.mod` 冲突。必须实现 `MarshalJSON`/`UnmarshalJSON`（否则 base64） | §3.3 |
+| 7 | **`ID` 的 tag 用 `type:bigint` + `autoIncrement`，不用 `type:bigserial`**：切断 GORM 关联复制把外键列污染成 `bigserial` 的源头（已获队长授权修改 `user.go`） | §3.4 |
 
 **剩余待确认（实现前在群里问清，不要自己拍板）：**
 
 | # | 问题 | 建议 |
 |---|---|---|
-| 1 | 新增 `gorm.io/datatypes` 依赖是否可接受？ | 建议接受（GORM 官方 JSONB 类型）；需广播，`go.mod` + `go.sum` 一并提交 |
+| 1 | ~~新增 `gorm.io/datatypes` 依赖是否可接受？~~ **已解决** | 改用自写的 `model.JSONB`（§3.3），**零新增依赖**，`go.mod` 保持只有 `gorm.io/gorm`，不再与成员 1 接 PGX 时冲突 |
 | 2 | `proactive_settings` 的四个默认值是否就用 DDL 的 30/120/3？ | 建议照 DDL（§4.3.1 表）。若产品另有默认，需与主动消息模块一起定 |
 | 3 | 时间字段精度：Go 默认 `RFC3339Nano`（带小数秒） | 与现有 `user.go` 一致即可；前端 `new Date()` 能正常解析。若要严格到秒，需自定义时间类型——**本期不必要** |
 | 4 | **通用规则的落地范围**：除人设外，那 10 个端点何时统一为 `4040`？ | 已确认**不在本分支改**（用户去群里广播，`API_CONTRACT.md` / `AGENTS.md` 是全局文件）。建议队长排一次"错误码统一"小任务，把 §4 + `§5/§7/§9/§10` 那 10 行 + `AGENTS.md` §4.3 + `4031` 文案一起改干净（清单连带行号见 §5.2 末尾）；本 PR 只负责 §4 人设端点 |
@@ -469,6 +485,7 @@ _ = json.Unmarshal(p.State, &s)   // 解析失败不报错，familiarity 取 0
 - [ ] **排序**：新建一个从未聊过的人设，它排在列表**最后**（不是最前）
 - [ ] **`state` 保留**：把某行 `state` 手工改成 `{"familiarity": 42, "self_note": "x"}`，`PUT` 之后两个键都还在，`familiarity` 仍为 42
 - [ ] **`familiarity` 正确**：`GET` 返回顶层 `familiarity`，且 `state` 原样透传
+- [ ] **`state` 是 JSON 对象而不是 base64**：响应体里形如 `"state":{"familiarity":0}`，**不是** `"state":"eyJmYW1pbGlh..."`（自写 `JSONB` 漏了 `MarshalJSON` 就会这样，且能编译能跑，只在看响应体时暴露）
 - [ ] code 评审 grep 通过：无硬编码错误码数字/文案、无 `response.Fail` in handler、无 secrets、无 `Save(` on persona
 - [ ] **规则已广播**，且 `API_CONTRACT.md`（§4 + §12 + 版本号 + §2 的 `4031` 文案）与 `AGENTS.md` §4.3 已由队长 / 成员 1 同步更新（清单见 §5.2 表、§7.3 #4）。**本分支不直接改这两个全局文件**
 - [ ] PR 已开、至少 1 人 Approve；commit 符合 `<type>(<scope>): <subject>`
@@ -480,3 +497,4 @@ _ = json.Unmarshal(p.State, &s)   // 解析失败不报错，familiarity 取 0
 | 2026-09-13 | v1 | 创建 | 人设 CRUD 开工前的设计与验收基线；含越权防线与契约偏差记录 |
 | 2026-09-13 | v2 | 并入 4 项决策：① `PageResult[T]` → `internal/dto/common_dto.go`；② ID 统一 `uint64`；③ `POST /personas` 同事务播种 `proactive_settings`（新增 §4.3.1、新增 `model/proactive_setting.go`、`dto/common_dto.go`）；④ **`:id` 未命中统一 `4040`**，取代契约的 `4031`/`4043`（§5.2 改写，含广播与文档更新清单） | 评审决策 |
 | 2026-09-13 | v3 | **套用队长「通用错误码规则」**：资源越权 → `4040`（隐藏存在性）、功能越权 → `4031`。§5.2 由「契约偏离」重写为「规则的应用」，补两条推论：①「不存在」也不能用 `4043`（与 `4040` 并存即可被二分探测）；②本模块无功能越权场景，**不产生 `4031`**。§7.2 交接项改为「广播规则本身 + 10 个端点待队长统一」（清单已按契约行号逐条核对并附于 §5.2），§8 新增「不产生 `4031`」验收项。**全局文件（`API_CONTRACT.md` / `AGENTS.md`）不在本分支改动** | 队长裁决 |
+| 2026-09-13 | v4 | **模型层落地**（`persona.go` / `migrate.go` / `jsonb.go`），并按队长授权修改 `user.go`：① 新增自写 `model.JSONB` 取代 `gorm.io/datatypes`，**零新增依赖**（§3.3 重写，§7.3 #1 关闭）；② `User.ID` / `Persona.ID` 的 tag 由 `type:bigserial` 改为 `type:bigint` + `autoIncrement`，切断 GORM 关联复制把外键列污染成 `bigserial` 的源头（§3.4 新增说明，§7.3 #6/#7）；③ §8 新增「`state` 不是 base64」验收项（20 项） | 实现阶段的两个实测缺陷 |
