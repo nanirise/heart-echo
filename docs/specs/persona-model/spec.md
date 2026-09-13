@@ -326,7 +326,7 @@ _ = json.Unmarshal(p.State, &s)   // 解析失败不报错，familiarity 取 0
 >
 > 判据是**"越的是资源，还是功能"**，不是"属于哪个模块"。**人设 CRUD 全程属资源越权侧。**
 
-**本功能的应用**：`PUT` / `DELETE /personas/:id` 的 `WHERE id = ? AND user_id = ?` 未命中，**一律返回 `4043`**（`errcode.ErrNotFound`），**不区分**「人设是别人的」与「人设不存在」。
+**本功能的应用**：`PUT` / `DELETE /personas/:id` 的 `WHERE id = ? AND user_id = ?` 未命中，**一律返回 `4043`**（`errcode.ErrPersonaNotFound`），**不区分**「人设是别人的」与「人设不存在」。
 
 **为什么"不存在"也不能给 `4043`（规则的关键推论）**：`id` 是 `BIGSERIAL` 全局自增。若"别人的"回 `4043`、"不存在的"回 `4043`，调用方拿同一个 id 各打一次，就能判断这个 id **到底存不存在**——隐藏存在性的目的当场失效。所以**同一个端点内 `4043` 与 `4043` 不能并存**：本模块 `:id` 未命中只有 `4043` 一个答案。
 
@@ -390,7 +390,7 @@ _ = json.Unmarshal(p.State, &s)   // 解析失败不报错，familiarity 取 0
 | 约束 | 来源 |
 |---|---|
 | 字段名**全 camelCase**，与契约 §4 逐字一致（`personalityDesc` 不是 `personality_desc`） | 协作规范 §5 / 契约 §1 |
-| **不新增错误码**；本功能只用 `ErrInvalidParams`(4001) / `ErrNotFound`(4043) / `ErrDBFailed`(5003) | 技术文档 §4.3 分段规则 |
+| **不新增错误码**；本功能只用 `ErrInvalidParams`(4001) / `ErrPersonaNotFound`(4043) / `ErrDBFailed`(5003) | 技术文档 §4.3 分段规则 |
 | **按通用规则：资源越权 → `4043`**；本模块无功能越权场景，**不产生 `4030`**；也不返回 `4043`（与 `4043` 并存即可被探测出存在性）。但**不要**去删 `pkg/errcode` 里的常量（其他端点仍在用，且那是成员 1 的文件） | 队长规则 2026-09-13 ｜ §5.2 |
 | **禁止硬编码错误码数字或文案**；`Fail()` 只接受 `ErrorCode` | **红线 6** |
 | handler **不写** `response.Fail`，错误 `_ = c.Error(err)` 上抛 | 技术文档 §4.4 |

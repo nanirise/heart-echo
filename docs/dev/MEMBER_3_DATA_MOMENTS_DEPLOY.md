@@ -80,7 +80,7 @@ docker compose -f deploy/docker-compose.yml build nginx
 | 创建人设 | 同上 | 名字/性格/说话风格必填，缺失返回 4001 |
 | 编辑人设 | 同上 | `PUT /personas/:id` |
 | 删除人设 | 同上 | 级联删除其全部消息 |
-| 越权校验 | service 层 | 改别人的返回 4031 `ErrPersonaNotOwned` |
+| 越权校验 | service 层 | 改别人的返回 4043 `ErrPersonaNotOwned` |
 | 路由注册 | `RegisterPersonaRoutes` | 通知成员 1 挂到 `router.go` |
 | DTO | `dto/persona_dto.go` | JSON tag 用 camelCase |
 
@@ -220,7 +220,7 @@ location /api/ {
 | `DELETE /schedules/:id`（**P1**） | — | `data: null`（软删，置 `cancelled`） |
 | `POST /schedules/:id/trigger` 🚨（**P1**） | — | `{messageId, content, createdAt}`，与定时任务同逻辑 |
 
-**错误码**：越权 `4031`、人设不存在 `4043`、资源不存在（含日程不存在）`4040`、参数错误 `4001`。**日程提醒不新增错误码**——同一个语义不开两个码。完整表见 [技术文档 §7.4](../TECH_DESIGN.md#74-错误码总表)。
+**错误码**：越权 `4043`、人设不存在 `4043`、资源不存在（含日程不存在）`4043`、参数错误 `4001`。**日程提醒不新增错误码**——同一个语义不开两个码。完整表见 [技术文档 §7.4](../TECH_DESIGN.md#74-错误码总表)。
 
 **契约规则**：字段名改一个字母都要在群里广播，并在 [API_CONTRACT.md](../API_CONTRACT.md)「变更记录」中登记。你负责的三组端点（人设 / 朋友圈 / 主动消息）在准备期要逐条确认。
 
