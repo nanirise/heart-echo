@@ -650,8 +650,9 @@ const (
     ErrRefreshInvalid   ErrorCode = 4014 // 刷新令牌无效，请重新登录
     ErrOldPasswordWrong ErrorCode = 4015 // 原密码不正确
 
-    ErrForbidden        ErrorCode = 4030 // 无权限访问该资源
-    ErrPersonaNotOwned  ErrorCode = 4031 // 该人设不属于当前用户
+    // 4030 只用于功能层面的越权（封禁用户、无权限的功能）。
+    // 资源越权（访问他人 persona）按「人设不存在」返回 4043，不走这里。
+    ErrForbidden ErrorCode = 4030 // 无权限访问该资源
 
     ErrNotFound         ErrorCode = 4040 // 资源不存在
     ErrUserNotFound     ErrorCode = 4041 // 用户不存在
@@ -681,8 +682,7 @@ var codeMessages = map[ErrorCode]string{
     ErrRefreshInvalid:  "刷新令牌无效，请重新登录",
     ErrOldPasswordWrong: "原密码不正确",
 
-    ErrForbidden:       "无权限访问该资源",
-    ErrPersonaNotOwned: "该人设不属于当前用户",
+    ErrForbidden: "无权限访问该资源",
 
     ErrNotFound:        "资源不存在",
     ErrUserNotFound:    "用户不存在",
@@ -711,8 +711,7 @@ var codeHTTPStatus = map[ErrorCode]int{
     // 4015 必须登记：漏登记会走 HTTPStatus() 的兜底分支，改密码失败变成 HTTP 500
     ErrOldPasswordWrong: http.StatusUnauthorized,
 
-    ErrForbidden:       http.StatusForbidden,
-    ErrPersonaNotOwned: http.StatusForbidden,
+    ErrForbidden: http.StatusForbidden,
 
     ErrNotFound:        http.StatusNotFound,
     ErrUserNotFound:    http.StatusNotFound,
@@ -764,7 +763,7 @@ func Wrap(code ErrorCode, err error) *BizError { return &BizError{Code: code, Er
 | 200 | 成功 | 200 |
 | 4000-4009 | 参数/注册类错误 | 参数校验、字段冲突 |
 | 4010-4019 | 认证类错误 | Token、密码 |
-| 4030-4039 | 授权类错误 | 无权限、越权 |
+| 4030-4039 | 授权类错误 | **功能**越权（资源越权归入 4040-4049「不存在」） |
 | 4040-4049 | 资源不存在 | 各类 Not Found |
 | 5000-5009 | 服务端错误 | 内部、DB、LLM、AI 服务 |
 
@@ -1818,8 +1817,8 @@ func AutoMigrate(db *gorm.DB) error {
 | 4013 | 401 | 用户名或密码错误 |
 | 4014 | 401 | 刷新令牌无效，请重新登录 |
 | 4015 | 401 | 原密码不正确 |
-| 4030 | 403 | 无权限访问该资源 |
-| 4031 | 403 | 该人设不属于当前用户 |
+| 4030 | 403 | 无权限访问该资源（功能越权） |
+| ~~4031~~ | — | ~~该人设不属于当前用户~~（已废弃：资源越权按「人设不存在」返回 4043） |
 | 4040 | 404 | 资源不存在 |
 | 4041 | 404 | 用户不存在 |
 | 4043 | 404 | 人设不存在 |
@@ -1831,7 +1830,7 @@ func AutoMigrate(db *gorm.DB) error {
 
 > **4002 / 4030 / 4041 / 5003 是预留码**：当前端点表里没有直接引用它们（分别由 Gin 绑定校验、通用权限判断、内部查询、DB 层错误使用）。保留是为了让 `pkg/errcode` 的分段完整，不是为了凑数——评审时不要以为漏了实现。
 > **4011 / 4012 / 5000 也不逐端点登记**：它们由中间件全局抛出——`4011` / `4012` 来自 `JWTAuth`，`5000` 来自 `Recovery` 与 `BizErrorHandler` 兜底。所有需要鉴权的端点都可能返回 4011/4012，所有端点都可能返回 5000，逐条抄进端点表只会制造噪音。
-> **日程提醒（P1）不新增错误码**：日程不存在复用 `4040`，人设越权复用 `4031`，参数缺失/非法复用 `4001`。**不要为它单开 `4044`**——同一个语义（"资源不存在"）开两个码，正是"一 code 一 msg"要杜绝的事。
+> **日程提醒（P1）不新增错误码**：日程不存在复用 `4040`，人设越权按「人设不存在」复用 `4043`，参数缺失/非法复用 `4001`。**不要为它单开 `4044`**——同一个语义（"资源不存在"）开两个码，正是"一 code 一 msg"要杜绝的事。
 > **4015 必须同时出现在 `codeHTTPStatus` 里**：漏登记会走 `HTTPStatus()` 的兜底分支，导致改密码失败返回 HTTP 500。`errcode_test.go` 应当校验「常量集合 == `codeMessages` 键集合 == `codeHTTPStatus` 键集合」。
 
 ### 7.5 关键 API 端点
