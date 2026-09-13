@@ -241,3 +241,15 @@ Recovery → RequestLogger → CORS → BizErrorHandler → JWTAuth → Handler
 
 **核心演示链路**：登录 → 创建人设 → 流式对话（情感感知）→ AI 记住信息 → 主动消息 → 朋友圈互动（P1 有余量再加日程提醒）。
 
+## 9. CI 约定
+
+CI 配置在 `.github/workflows/ci.yml`。每个顶层服务目录对应一个 job，job 的 `working-directory` 必须指向真实存在的目录。
+
+改动目录结构时，同一次提交里同步更新 `ci.yml`：
+- 新增顶层服务目录 → 新增对应 job
+- 删除或重命名 → 同步修改 job
+- `deploy/`、`docs/` 等非代码目录不纳入 CI
+
+不确定某个目录是否该纳入 CI，问组长，不要自己判断。
+
+AI 辅助时，若发现目录结构与 `ci.yml` 不一致，**提示我，不要自动修改**。
