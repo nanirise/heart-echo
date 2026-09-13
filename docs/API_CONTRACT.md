@@ -65,12 +65,12 @@
 | 4013 | 401 | 用户名或密码错误 | 登录失败（不区分用户不存在，防枚举） |
 | 4014 | 401 | 刷新令牌无效，请重新登录 | refresh 失败 |
 | 4015 | 401 | 原密码不正确 | 修改密码时旧密码校验失败 |
-| 4030 | 403 | 无权限访问该资源 | 越权 |
-| 4031 | 403 | 该人设不属于当前用户 | persona 归属校验失败 |
+| 4030 | 403 | 无权限访问该资源 | **功能越权**（封禁用户访问、无权限的功能） |
+| ~~4031~~ | — | ~~该人设不属于当前用户~~（已废弃：资源越权按「资源不存在」返回 4043） | 保留占位，勿复用 |
 | 4040 | 404 | 资源不存在 | 通用 |
 | 4041 | 404 | 用户不存在 | |
 | ~~4042~~ | — | ~~会话不存在~~（已废弃：无会话实体，一人设一对话） | 保留占位，勿复用 |
-| 4043 | 404 | 人设不存在 | 含「该人设的对话不存在」——人设不存在则对话不存在 |
+| 4043 | 404 | 人设不存在 | 含「该人设的对话不存在」；**资源越权也返回此码**——访问他人 persona 时按不存在处理，不暴露该 `persona_id` 是否存在 |
 | 5000 | 500 | 服务端内部错误 | panic / 未分类错误 |
 | 5001 | 500 | AI 回复生成失败，请稍后重试 | LLM 调用失败 |
 | 5002 | 500 | AI 服务暂时不可用 | AI 服务不可达 |
@@ -179,10 +179,10 @@
 |------|------|-----------|--------|
 | `GET /personas` ⬜ | `page` `pageSize` | `PageResult<Persona>` | — |
 | `POST /personas` ⬜ | `{name, personalityDesc, speakingStyle}` | `Persona` | 4001 |
-| `PUT /personas/:id` ⬜ | 同上 | `Persona` | 4001 4031 4043 |
-| `DELETE /personas/:id` ⬜ | — | `null` | 4031 4043 |
+| `PUT /personas/:id` ⬜ | 同上 | `Persona` | 4001 4043 |
+| `DELETE /personas/:id` ⬜ | — | `null` | 4043 |
 
-> 所有涉及 `:id` 的操作，服务端必须校验该人设属于当前登录用户（`user_id`），否则返回 `4031`。
+> 所有涉及 `:id` 的操作，服务端必须校验该人设属于当前登录用户（`user_id`）；**不属于本人时按「人设不存在」返回 `4043`**，不返回 403——403 会暴露该 `persona_id` 存在，而它是全局自增的，可被顺序试号探测。
 > 删除人设会**级联删除**该人设的全部消息与记忆关联，前端必须二次确认后再调。
 
 ---
@@ -213,8 +213,8 @@
 
 | 端点 | 请求 | 响应 data | 错误码 |
 |------|------|-----------|--------|
-| `GET /chat/personas/:personaId/messages` ⬜ | `page` `pageSize` | `PageResult<ChatMessage>` | 4031 4043 |
-| `POST /chat/stream` ⬜ | 见 §6 | SSE | 4001 4010 4031 4043 5001 5002 |
+| `GET /chat/personas/:personaId/messages` ⬜ | `page` `pageSize` | `PageResult<ChatMessage>` | 4043 |
+| `POST /chat/stream` ⬜ | 见 §6 | SSE | 4001 4010 4043 5001 5002 |
 
 > **一个人设 = 一个对话**。没有会话实体，也就没有"新建对话/删除对话/会话列表"这三组接口——对话列表直接复用 `GET /personas`（见 §4，按 `lastMessageAt` 倒序），删人设即删对话（消息级联删除）。
 
@@ -278,8 +278,8 @@ data: {"code":5001,"message":"AI 回复生成失败，请稍后重试"}
 
 | 端点 | 请求 | 响应 data | 错误码 |
 |------|------|-----------|--------|
-| `GET /memory` ⬜ | `personaId` `page` `pageSize` | `PageResult<MemoryItem>` | 4031 4043 |
-| `GET /profile/portrait` ⬜ | `personaId` | `{ "personaId": 1, "profileData": {}, "updatedAt": "..." }` | 4031 4043 |
+| `GET /memory` ⬜ | `personaId` `page` `pageSize` | `PageResult<MemoryItem>` | 4043 |
+| `GET /profile/portrait` ⬜ | `personaId` | `{ "personaId": 1, "profileData": {}, "updatedAt": "..." }` | 4043 |
 
 > 前端**必须传 `personaId`**（切到哪个伴侣就看谁的记忆/画像）；服务端除校验人设归属外还会带上 `user_id` 条件。**前端永远不传 `user_id`**——它从 Token 取。
 > 本期记忆**只读**，不提供删除接口。
@@ -355,9 +355,9 @@ data: {"code":5001,"message":"AI 回复生成失败，请稍后重试"}
 
 | 端点 | 请求 | 响应 data | 错误码 |
 |------|------|-----------|--------|
-| `GET /proactive/settings` ⬜ | `personaId` | `Settings` | 4031 4043 |
-| `PUT /proactive/settings` ⬜ | `personaId` + 可改字段 | `Settings` | 4001 4031 4043 |
-| `POST /proactive/trigger` 🚨 ⬜ | `{personaId}` | `{messageId, content, createdAt}` | 4031 4043 5001 |
+| `GET /proactive/settings` ⬜ | `personaId` | `Settings` | 4043 |
+| `PUT /proactive/settings` ⬜ | `personaId` + 可改字段 | `Settings` | 4001 4043 |
+| `POST /proactive/trigger` 🚨 ⬜ | `{personaId}` | `{messageId, content, createdAt}` | 4043 5001 |
 
 **可改字段与约束**（前端三个控件，都要给）
 
@@ -399,9 +399,9 @@ data: {"code":5001,"message":"AI 回复生成失败，请稍后重试"}
 
 | 端点 | 请求 | 响应 data | 错误码 |
 |------|------|-----------|--------|
-| `GET /schedules` ⬜ | `personaId`（**必带**）+ `page` `pageSize` | `PageResult<Schedule>` | 4001 4031 4043 |
-| `DELETE /schedules/:id` ⬜ | — | `data: null` | 4031 4040 |
-| `POST /schedules/:id/trigger` 🚨 ⬜ | — | `{messageId, content, createdAt}` | 4031 4040 5001 |
+| `GET /schedules` ⬜ | `personaId`（**必带**）+ `page` `pageSize` | `PageResult<Schedule>` | 4001 4043 |
+| `DELETE /schedules/:id` ⬜ | — | `data: null` | 4040 |
+| `POST /schedules/:id/trigger` 🚨 ⬜ | — | `{messageId, content, createdAt}` | 4040 5001 |
 
 > **`personaId` 是必传的**：日程跟记忆一样是「一人设一份」，不带 `personaId` 无法确定查谁的日程。缺失返回 `4001`。
 > **取消是软删除**：`DELETE` 把 `status` 置为 `cancelled`，不物理删行（保留可回溯）。重复删除同一条是幂等的。
@@ -440,6 +440,7 @@ data: {"code":5001,"message":"AI 回复生成失败，请稍后重试"}
 | 2026-09-10 | v1 | 新增 `moment_likes` 表（`UNIQUE(user_id, moment_id)`）：点赞**幂等**，`POST /moments/:id/like` 返回改为 `{likeCount, liked}`，`Moment` 新增 `liked`。表数 8 → 9 | §8 | — | ⬜ |
 | 2026-09-10 | v1 | `Moment` **移除 `emotionLabel`**：AI 发动态的情绪只用于内部生成语气，不进响应体（`ai_moments.emotion_label` 列保留）。与"情绪是内部信号"的全局约定对齐 | §8 | — | ⬜ |
 | 2026-09-10 | v1 | 修正 `codeHTTPStatus` 漏登记 `4015`；`ChatMessage` TS 类型补 `isNudge`；SSE 前端类型补 `StreamChatPayload` / `DonePayload`，签名与成员 2 文档统一 | §5 §6 | — | ⬜ |
+| 2026-09-13 | v1 | **资源越权统一按「资源不存在」返回**：废弃 `4031`（`ErrPersonaNotOwned`），访问他人 persona 一律返回 `4043`——403 会暴露该 `persona_id` 存在，而它是全局自增的，可被顺序试号探测出系统内人设总数。`4030` 收窄为**功能越权**专用 | §2 §4 §5 §7 §9 §10 | 成员 1 | ⬜ |
 | 待填 | v1 | 初始冻结 | 全部 | — | — |
 
 ---

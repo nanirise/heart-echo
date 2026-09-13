@@ -131,7 +131,7 @@ Recovery → RequestLogger → CORS → BizErrorHandler → JWTAuth → Handler
 - **账号之间完全隔离**。任何接口只能读当前 Token 对应用户自己的数据，不存在跨用户列表/动态/评论。
 - **一个人设 = 一个对话**，没有会话（session）实体。消息直接挂 `persona_id`；对话列表复用 `GET /personas`（按 `lastMessageAt` 倒序）；删人设级联删消息。
 - **记忆与画像都是一人设一份**。查询必须同时带 `persona_id`（隔离人设）和 `user_id`（越权防线，从 Token 取，前端永不传）。只带 `persona_id` 会跨用户串号，只带 `user_id` 会跨人设。
-- 涉及 `:id` 的人设操作必须校验归属，失败返回 `4031`。
+- 涉及 `:id` 的人设操作必须校验归属，**失败按「人设不存在」返回 `4043`**——不返回 403：403 会暴露该 `persona_id` 存在，而它是全局自增的，可被顺序试号探测出系统内人设总数。`4030` 只用于**功能越权**（封禁用户、无权限的功能）。
 - 阶段二 ChromaDB 检索同样两个过滤条件都要带（`persona_id` 是全局自增，别的用户同号人设会串号）。
 - 外键统一 `ON DELETE CASCADE`（`source_message_id` 用 `SET NULL`）。
 - 记忆只提取 `fact` / `preference` / `event` 三类，**不存情绪**；记忆**只读**，不提供删除接口。
