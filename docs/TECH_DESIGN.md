@@ -981,26 +981,31 @@ VITE_API_BASE_URL=http://localhost:8080/api/v1
 ```go
 // pkg/jwt/jwt.go
 type Claims struct {
-    UserID   uint   `json:"uid"`
-    Username string `json:"uname"`
+    UserID    uint64 `json:"uid"` // 与 internal/model.User.ID 保持同一类型
+    Username  string `json:"uname"`
     TokenType string `json:"typ"` // "access" | "refresh"
     jwt.RegisteredClaims
 }
 
-// 有效期一律从配置读入，禁止在代码里写死——否则会与 .env 的
+// 有效期一律由调用方从配置传入，禁止在代码里写死——否则会与 .env 的
 // JWT_ACCESS_EXPIRE / JWT_REFRESH_EXPIRE 形成两个事实来源。
-func GenerateTokenPair(userID uint, username string, cfg config.JWTConfig) (*TokenPair, error) {
+// 传 time.Duration 而不是 config.JWTConfig，是为了让 pkg/ 不反向依赖 internal/。
+func GenerateTokenPair(
+    userID uint64,
+    username, secret string,
+    accessTTL, refreshTTL time.Duration,
+) (*TokenPair, error) {
     now := time.Now()
     accessClaims := Claims{
         UserID: userID, Username: username, TokenType: "access",
         RegisteredClaims: jwt.RegisteredClaims{
             Issuer:    "heart-echo",
-            Subject:   strconv.FormatUint(uint64(userID), 10),
+            Subject:   strconv.FormatUint(userID, 10),
             IssuedAt:  jwt.NewNumericDate(now),
-            ExpiresAt: jwt.NewNumericDate(now.Add(cfg.AccessTokenExpire)),
+            ExpiresAt: jwt.NewNumericDate(now.Add(accessTTL)),
         },
     }
-    // refresh token 同理，typ = "refresh"，有效期取 cfg.RefreshTokenExpire
+    // refresh token 同理，typ = "refresh"，有效期取 refreshTTL
     // ...
 }
 ```
