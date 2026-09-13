@@ -39,6 +39,6 @@
   - 其他人要做什么：写中间件时按上面签名调用即可，不用引 `golang-jwt`；**TECH_DESIGN §4.7 的中间件示例还是旧写法**（`jwtutil.ParseToken` + 底层库的 `jwt.ErrTokenExpired`），我会在写 Step 7 时一并改掉
 
 ## 待确认
-- 错误码规则已于 2026-09-13 定为：**资源越权 → `4043`**、**功能越权 → `4030`**、**`4031` 废弃**。以下两处仍是旧规则，等 Owner 自行更新：
-  - 成员 2：`docs/specs/persona-model/{spec.md,plan.md}` 按 `4040`/`4031` 写（含 `plan.md:277` 的 grep）
-  - 成员 3：`docs/dev/MEMBER_3_DATA_MOMENTS_DEPLOY.md` 第 83、223 行仍写 `4031`
+- 错误码规则已于 2026-09-13 定为：**资源越权 → `4043`**、**功能越权 → `4030`**、**`4031` 废弃**。成员 3 的两处文档：
+- ✅ **已同步**：`docs/specs/persona-model/{spec.md,plan.md}`（PR #14 `ed0887d`，`4040`→`4043`、`4031`→`4030` 全量替换）
+- ⬜ **未同步**：`docs/dev/MEMBER_3_DATA_MOMENTS_DEPLOY.md` 第 83、223 行仍写 `4031`
