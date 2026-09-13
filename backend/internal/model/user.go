@@ -4,7 +4,12 @@ import "time"
 
 // User 用户表结构体，对应数据库表 users
 type User struct {
-	ID       uint64 `gorm:"column:id;type:bigserial;primaryKey;autoIncrement" json:"id"`
+	//   type:bigint        不写 bigserial —— GORM 建 belongs-to 关联时会把本字段的 DataType
+	//                      复制给外键列（schema/relationship.go）。写成 bigserial 会让每一张子表的
+	//                      user_id 都变成 "bigint NOT NULL DEFAULT nextval(...)"，既偏离 DDL，
+	//                      又让漏传 user_id 的 INSERT 静默拿到别人的 id。见 persona.go 的说明。
+	//                      bigint + autoIncrement 仍渲染为 bigserial，users 表本身无任何变化。
+	ID       uint64 `gorm:"column:id;type:bigint;primaryKey;autoIncrement" json:"id"`
 	Username string `gorm:"column:username;type:varchar(20);not null;uniqueIndex" json:"username"`
 	Email    string `gorm:"column:email;type:varchar(100);not null;uniqueIndex" json:"email"`
 	//   json:"-"              JSON 字段名；忽略该字段，彻底不出现在响应里（安全防线！）
