@@ -13,10 +13,10 @@
   - 本功能文档：`docs/specs/backend-skeleton/{spec.md,plan.md}`
 
 ## 成员2
-- 在做：
-- 下一步：
-- 卡住：
-- 改了哪些文件：
+- 在做：分支 2「前端数据契约层」编码完成、等 PR —— `src/types/api.ts`、`src/types/errcode.ts`、`frontend/.env.example`，spec 与 plan 已提交（`docs/specs/frontend-api-types/`）
+- 下一步：push 分支 → 开 PR → 等 AI 审计 → 合并后开分支 3（`request.ts` + 路由表 + `MainLayout.vue`）
+- 卡住：无。风险：契约 §13 三人签署未完成，字段若再变，`types/*.ts` 需返工
+- 改了哪些文件：本分支新增 `frontend/src/types/{api.ts,errcode.ts}`、`frontend/.env.example`、`docs/specs/frontend-api-types/{spec,plan}.md`、`PROGRESS.md`；分支 1 已合并 develop —— `frontend/{package.json,package-lock.json,tsconfig.json,vite.config.ts,index.html}`、`frontend/src/{main.ts,App.vue,vite-env.d.ts}`
 
 ## 成员3
 - 在做：
