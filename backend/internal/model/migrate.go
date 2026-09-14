@@ -10,8 +10,9 @@ import "gorm.io/gorm"
 // 红线 8：改表结构只改 struct + AutoMigrate，禁止手写 ALTER TABLE / DropTable。
 func AutoMigrate(db *gorm.DB) error {
 	return db.AutoMigrate(
-		&User{},    // 无外键依赖，必须最先建
-		&Persona{}, // 引用 users(id) ON DELETE CASCADE，必须在 User 之后
+		&User{},        // 无外键依赖，必须最先建
+		&Persona{},     // 引用 users(id) ON DELETE CASCADE，必须在 User 之后
+		&ChatMessage{}, // 引用 users(id) 与 personas(id)，两张表都要先建好
 		// &ProactiveSetting{},  // 待 internal/model/proactive_setting.go 落地后追加（引用 personas(id)）
 	)
 }
