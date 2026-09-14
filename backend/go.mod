@@ -3,8 +3,10 @@ module github.com/nanirise/heart-echo/backend
 go 1.27.1
 
 require (
+	github.com/caarlos0/env/v11 v11.4.1
 	github.com/gin-gonic/gin v1.12.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
+	github.com/joho/godotenv v1.5.1
 	go.uber.org/zap v1.28.0
 	gorm.io/driver/postgres v1.6.2
 	gorm.io/gorm v1.31.2
