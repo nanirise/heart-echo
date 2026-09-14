@@ -1,6 +1,6 @@
 # PROGRESS
 
-最后更新：2026-09-13
+最后更新：2026-09-14
 
 ## 成员1
 - 在做：分支 `feature/backend-bootstrap`（spec: `docs/specs/backend-skeleton/`；spec 里写的 `feature/backend-skeleton` 已随 PR #12 合并，实际用的是 `feature/backend-bootstrap`）。plan 10 步**完成 4 步**——`pkg/errcode`、`pkg/response`、`pkg/logger` 已提交并 push；`pkg/jwt` 已写完且本地验证通过（7 条测试），**未提交**
@@ -13,10 +13,10 @@
   - 本功能文档：`docs/specs/backend-skeleton/{spec.md,plan.md}`
 
 ## 成员2
-- 在做：
-- 下一步：
-- 卡住：
-- 改了哪些文件：
+- 在做：分支 2「前端数据契约层」—— `src/types/api.ts`、`src/types/errcode.ts`、`frontend/.env.example`。spec 与 plan 已提交（`docs/specs/frontend-api-types/`）
+- 下一步：① 写 `types/api.ts`（准备期交接物 #8，最高优先，成员 3 在等）② 写 `types/errcode.ts`（19 个业务码照 `backend/pkg/errcode/errcode.go` 抄）③ 补 `frontend/.env.example`（交接物 #7）④ `tsc --noEmit` + `build` 自查 ⑤ push 开 PR。`request.ts`、路由表、`MainLayout.vue` 移交分支 3
+- 卡住：无。风险：契约 §13 三人签署未完成，字段若再变，`types/*.ts` 需返工
+- 改了哪些文件：分支 1 已合并 develop —— `frontend/{package.json,package-lock.json,tsconfig.json,vite.config.ts,index.html}`、`frontend/src/{main.ts,App.vue,vite-env.d.ts}`、`docs/specs/frontend-skeleton/{spec,plan}.md`；分支 2 计划改 `frontend/src/types/*.ts`、`frontend/.env.example`、`PROGRESS.md`
 
 ## 成员3
 - 在做：
