@@ -11,7 +11,7 @@ export interface ApiResponse<T = unknown> {
   code: number
   /** 中文文案，由后端错误码表提供 */
   message: string
-  /** 业务数据，失败时为 null */
+  /** 业务数据；请求失败时后端返回 null，请勿直接访问，统一走 request.ts 解包 */
   data: T
   /** 毫秒时间戳 */
   timestamp: number
