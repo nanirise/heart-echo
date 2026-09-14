@@ -2,7 +2,7 @@
 
 > 功能名：backend-skeleton ｜ 分支：`feature/backend-skeleton`
 > 负责人：成员 1 ｜ 状态：草稿（待审核）
-> 创建：2026-09-13 ｜ 最后更新：2026-09-13
+> 创建：2026-09-13 ｜ 最后更新：2026-09-14
 > 关联：[开发总纲 §3 准备期交接清单](../../dev/MASTER.md#3-准备期交接清单p0不完成不进-week-1) ｜ [成员 1 开发文档 §1](../../dev/MEMBER_1_BACKEND_AI.md) ｜ [接口契约](../../API_CONTRACT.md) ｜ [技术文档 §4 / §8](../../TECH_DESIGN.md)
 
 ---
@@ -85,10 +85,12 @@
 
 | 交付物 | 产出人 | 变量 |
 |---|---|---|
-| #7 | 成员 1 | `DB_*`、`JWT_SECRET`、`AI_SERVICE_URL`、`AI_SERVICE_TOKEN` |
+| #7 | 成员 1 | `SERVER_PORT`、`GIN_MODE`、`DB_HOST`/`DB_PORT`/`DB_USER`/`DB_PASSWORD`/`DB_NAME`/`DB_SSLMODE`、`JWT_SECRET`、`JWT_ACCESS_EXPIRE`、`JWT_REFRESH_EXPIRE`、`AI_SERVICE_URL`、`AI_SERVICE_TOKEN`、`CORS_ALLOW_ORIGINS`（共 **14** 个） |
 | #4b | 成员 3 | `MOMENT_JOB_INTERVAL`、`PROACTIVE_JOB_INTERVAL` |
 
-**约定**：本轮我只写入自己负责的 4 组变量，**不为成员 3 的变量留占位**；他后续自行添加。两人错开时间改同一文件，动手前在群里说一声。
+**清单依据**：以 [技术文档 §4.6](../../TECH_DESIGN.md#46-环境变量清单) 的 `backend/.env.example` 块为准（共 16 个），减去成员 3 的 2 个 JOB 变量，即为成员 1 的 14 个。[MASTER §5](../../dev/MASTER.md) 那张表是节选，它自己写着"完整清单见技术文档 §4.6"。
+
+**约定**：本轮我只写这 14 个，**不为成员 3 的变量留占位行**（只在文件头注释里说明那两个归他）；他后续自行添加。两人错开时间改同一文件，动手前在群里说一声。
 
 ## 4. 硬性约束（违反即不通过）
 
@@ -127,6 +129,7 @@
 | 日期 | 变更 | 原因 |
 |---|---|---|
 | 2026-09-13 | 创建（草稿） | 准备期基础设施，解锁成员 2 / 成员 3 并行开发 |
+| 2026-09-14 | §3.3 变量清单由"4 组"细化为 14 个，并注明依据是技术文档 §4.6 | 原写法是概略描述（只举了 `DB_*`、`JWT_SECRET`、`AI_SERVICE_*`），漏了 `SERVER_PORT`、`GIN_MODE`、`CORS_ALLOW_ORIGINS` 和两个有效期——而这些本来就是 §2.1 In Scope 里 `config.go` 必须读到的 |
 
 ---
 
