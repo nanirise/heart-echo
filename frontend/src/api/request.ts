@@ -102,8 +102,12 @@ async function doRefresh(): Promise<string> {
   return body.data.accessToken
 }
 
-/** 带并发锁的刷新入口：多个请求同时过期时，只会真正刷新一次 */
-async function refreshAccessToken(): Promise<string> {
+/**
+ * 带并发锁的刷新入口：多个请求同时过期时，只会真正刷新一次。
+ * 对外导出，供 auth store 主动刷新时复用，保证全局只有一条刷新路径。
+ */
+export async function refreshAccessToken(): Promise<string> {
+
   // 已经有人在刷新 —— 复用它的结果，排队等就行
   if (refreshPromise !== null) {
     return refreshPromise
