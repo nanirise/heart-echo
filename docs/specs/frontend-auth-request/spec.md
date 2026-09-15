@@ -6,7 +6,7 @@
 | 项 | 值 |
 |----|-----|
 | 分支 | `feature/frontend-auth-request` |
-| 状态 | ⬜ 进行中 |
+| 状态 | ✅ 代码完成，待合并 |
 | 依赖分支 | `feature/frontend-api-types`（已合并 40e9105） |
 | 关联契约 | `docs/API_CONTRACT.md` §1 §2 §3 |
 
@@ -42,8 +42,7 @@
 - ❌ **布局**（`src/layouts/MainLayout.vue`）→ 分支 3-B
 - ❌ **任何页面或组件**（登录页、聊天页等）→ 后续分支
 - ❌ **SSE 流式请求**（`POST /chat/stream`）→ 聊天分支，且必须用 `fetch` 而非 axios
-- ❌ 不新增任何类型定义，只消费上一分支的 `types/api.ts`、`types/errcode.ts`
-
+- ❌ 不新增类型**文件**；types/api.ts、types/errcode.ts原样复用。本支新增的 5 个接口类型就近定义在stores/auth.ts，不另开文件
 ---
 
 ## 3. 依赖与交接
@@ -74,7 +73,7 @@
 ## 4. 硬性约束
 
 1. **响应解包**：仅当 `code === 200` 时返回 `data`；非 200 一律 `throw`，错误对象含 `code` 与 `message`。这是 `ApiResponse.data: T`（不含 `null`）类型成立的前提，见契约 §1。
-2. **认证头**：所有请求自动附加 `Authorization: Bearer <accessToken>`；**免鉴权端点**（`/auth/login`、`/auth/register`、`/auth/refresh`）不附加。
+2. **认证头**：所有请求自动附加 `Authorization: Bearer <accessToken>`；**免鉴权端点**（`/auth/login`、`/auth/register`、`/auth/refresh`、`/health`）不附加。
 3. **4012 处理**：access token 过期时自动调用 `/auth/refresh`，成功后**重放原请求**；并发场景下**只发起一次 refresh**（并发锁）。
 4. **登出条件**：遇到 `4010` / `4011` / `4014` 时清空登录态并跳转登录页，**不重试**（契约 §2）。
 5. **token 轮换**：refresh 成功后必须同时更新 `accessToken` 和 `refreshToken`，不可只更新其一。
@@ -87,20 +86,20 @@
 
 ## 5. 验收标准
 
-- [ ] `request.ts` 导出统一的请求方法，业务代码调用时无需手动传 token
-- [ ] `code === 200` 时返回 `data` 字段，调用方**不需要**判断 `code`
-- [ ] 非 200 时抛出错误，错误对象包含 `code` 与 `message`
-- [ ] 请求自动附加 `Authorization: Bearer <accessToken>` 头
-- [ ] 免鉴权端点（login / register / refresh）不附加 token 头
-- [ ] 遇到 `4012` 时自动调用 refresh 并**重放**原请求
-- [ ] 多个请求同时遇到 `4012` 时，refresh **只发起一次**（并发锁）
-- [ ] refresh 成功后 `accessToken` 与 `refreshToken` **两者都更新**
-- [ ] 遇到 `4010` / `4011` / `4014` 时清空登录态并跳转登录页，且**不重试**
-- [ ] `auth.ts` 提供 `login` / `register` / `logout` / `refresh` 与 `isLogin`
-- [ ] 注册成功后直接进入登录态（契约 §3.1「注册即登录」，不再走登录页）
-- [ ] 登录态持久化，手动刷新浏览器后仍保持登录
-- [ ] `npx tsc --noEmit` 零错误
-- [ ] `npm run build` 通过
+- [x] `request.ts` 导出统一的请求方法，业务代码调用时无需手动传 token
+- [x] `code === 200` 时返回 `data` 字段，调用方**不需要**判断 `code`
+- [x] 非 200 时抛出错误，错误对象包含 `code` 与 `message`
+- [x] 请求自动附加 `Authorization: Bearer <accessToken>` 头
+- [x] 免鉴权端点（login / register / refresh / health）不附加 token 头
+- [x] 遇到 `4012` 时自动调用 refresh 并**重放**原请求
+- [x] 多个请求同时遇到 `4012` 时，refresh **只发起一次**（并发锁）
+- [x] refresh 成功后 `accessToken` 与 `refreshToken` **两者都更新**
+- [x] 遇到 `4010` / `4011` / `4014` 时清空登录态并跳转登录页，且**不重试**
+- [x] `auth.ts` 提供 `login` / `register` / `logout` / `refresh` 与 `isLogin`
+- [x] 注册成功后直接进入登录态（契约 §3.1「注册即登录」，不再走登录页）
+- [x] 登录态持久化，手动刷新浏览器后仍保持登录
+- [x] npm run typecheck（vue-tsc --noEmit）零错误
+- [x] `npm run build` 通过
 
 ---
 
@@ -109,3 +108,5 @@
 | 日期 | 版本 | 变更内容 | 改动人 |
 |------|------|----------|--------|
 | 2026-09-15 | v1 | 初始版本 | 成员 2 |
+| 2026-09-15 | v1.1 | 动作 `refreshToken` 更名 `refresh`（避免与 state 字段重名） | 成员 2 |
+| 2026-09-15 | v1.1 | 白名单补 `/health`；验收工具名更正为 `vue-tsc`；文件清单与类型声明同步实际代码 | 成员 2 |

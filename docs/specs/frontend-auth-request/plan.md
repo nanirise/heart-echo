@@ -31,13 +31,14 @@
 
 | 文件 | 操作 |
 |------|------|
-| `frontend/src/stores/auth.ts` | 新增 |
 | `frontend/src/api/request.ts` | 新增 |
-| `frontend/src/main.ts` | 修改（挂载 pinia 持久化插件） |
-| `frontend/src/api/index.ts` | 新增（可选：统一导出，便于业务层 import） |
+| `frontend/src/stores/auth.ts` | 新增 |
+| `frontend/src/vite-env.d.ts` | 修改（补 `ImportMetaEnv` 声明） |
 | `docs/specs/frontend-auth-request/spec.md` | 新增 |
 | `docs/specs/frontend-auth-request/plan.md` | 新增 |
-| `PROGRESS.md` | 修改（成员 2 段） |
+
+> 注：pinia 持久化插件在分支 1 已挂到 `main.ts`，本支未改动 `main.ts`；原计划的 `api/index.ts` 未采用（业务层直接 `import { request } from '@/api/request'` 已足够）。
+
 
 ---
 
@@ -72,7 +73,7 @@ let refreshPromise: Promise<string> | null = null
 ### 3.3 免鉴权白名单判断
 
 ```ts
-const WHITE_LIST = ['/auth/login', '/auth/register', '/auth/refresh']
+const WHITE_LIST = ['/auth/login', '/auth/register', '/auth/refresh', '/health']
 // 判断 config.url 是否白名单，是则不加 Authorization 头
 // 注意：refresh 请求本身不能再触发 4012 刷新（否则死循环）
 ```
@@ -90,7 +91,8 @@ const WHITE_LIST = ['/auth/login', '/auth/register', '/auth/refresh']
 - `ApiResponse<T>` 与 `ErrorCode` 直接 `import`，不重复定义
 - 抛错时用 `ErrorCode` 常量比较（如 `ErrorCode.ErrTokenExpired`），不写魔法数字 `4012`
 - `VITE_API_BASE_URL` 取环境变量（含 `/api/v1` 后缀）
-- 兑现 `VITE_USE_MOCK`：为 `true` 时不发真实请求（Mock 策略见 §4）
+- ⚠️ **`VITE_USE_MOCK` 本支不实现（显式推迟）**：`request.ts` 暂不读取该变量，仅 `.env.example` 占位；待 mock 模块接入时再切换请求适配器
+
 
 ---
 ### 3.6 登出跳转的选型
@@ -108,7 +110,7 @@ const WHITE_LIST = ['/auth/login', '/auth/register', '/auth/refresh']
 |------|------|------|
 | `request.ts` 与 `auth.ts` 循环依赖 | 运行时报 store 未初始化 | 拦截器内延迟调用 `useAuthStore()` |
 | 并发锁未清空 | 刷新一次后永久卡死 | `finally` 中置 `null` |
-| refresh 请求自身走拦截器 | 死循环刷新 | 白名单跳过 + 标记跳过刷新 |
+| refresh 请求自身走拦截器 | 死循环刷新 | 用裸实例 refreshClient 发刷新请求，不进拦截器 |
 | 持久化语法用错版本 | 编译报错 | 按 3.x 的 `key` / `paths` 写 |
 | 契约 §13 三人签署未完成 | 字段若变，token 结构返工 | 本分支只依赖 §3，变更风险低 |
 | 登录页尚未存在 | 登出后整页跳到一个还不存在的路由 | 本分支用 `window.location.assign('/login')`，登录页本身留分支 3-B |
