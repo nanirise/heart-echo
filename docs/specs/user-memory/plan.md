@@ -262,7 +262,7 @@ func (s *memoryService) ListByPersona(ctx context.Context, userID, personaID uin
 | `model/migrate.go` | `&UserMemory{}` 是否排在 `&User{}` / `&Persona{}` / `&ChatMessage{}` **之后**（它同时引用三张表）；**有没有顺手改动别人的行** | `AutoMigrate` 一次跑过，无依赖顺序报错；`git diff migrate.go` **只有 1 行新增** |
 | `docs/dev_notes/user_memory_notes.md` | 里面的**验证证据**是否可追溯：每条"已验"都能指到一次实跑的原始输出，每条"没验"都写明了卡在哪个依赖上 | 出现"我不确定 / 这条没验"的批注也是合格的——那正是审查的价值。⚠️ 这份笔记**不入库**（git 忽略），所以**它不能是唯一载体**：要留痕的结论都已回填进 `spec.md` §8 / `plan.md` §6 |
 
-### 4.3 A 段 · 八个高危点专项审查
+### 4.3 A 段 · 九个高危点专项审查
 
 | # | 高危点 | 为什么会错 | 我怎么验 |
 |---|---|---|---|
@@ -274,6 +274,7 @@ func (s *memoryService) ListByPersona(ctx context.Context, userID, personaID uin
 | 6 | **`MemoryType` 用了裸 `string`** | 拼错 `"preference"` 在编译期发现不了，会落成脏数据，前端三分类渲染掉进"未知"分支 | `grep -cE '^\s*MemoryType +MemoryType +`' user_memory.go` = **1**（字段声明为自定义类型）。⚠️ **不能**用 `grep "MemoryType string"`——那会命中 `type MemoryType string` 这行**类型声明本身**（本分支实测误报过）；三个常量都在 |
 | 7 | **`importance_score` 的类型 / 编解码** | pgx 往 `numeric` 编 `float64` 若类型不匹配，落库直接失败（该列 **NOT NULL**，必写） | A5：插 `0.850` 读回 `0.850`；报错再退 `driver.Valuer`（§3.1 末注），**不要引入 `decimal`** |
 | 8 | **`migrate.go` 动了别人的行** | 多人共用一个文件，顺手"整理"一下就会与别的分支冲突 | `git diff` 只有 1 行新增 |
+| 9 | **关联 tag 被截断 / 结构体没闭合**（`62d10fa` 实际发生过） | 两处损坏同时出现在一个提交里：① 结构体闭合 `}` 丢失 → CI 报 `147:1 expected '}' found 'func'`，**能报出来**；② `SourceMessage` 的 tag 变成 `gorm:"...;constraint:OnDelete:SET NULL"`，`foreignKey` / `references` 一起没了 → **`go build` / `vet` / `gofmt` 全部照过**，但 GORM 退回按约定推断关联，这条外键可能建错或建不出来——而它恰恰是本表唯一与另两张表不同的地方 | ① `gofmt -e user_memory.go` 退出码 = 0；`grep -cE '^\}$'` = 2（结构体 + 方法各一个）；② `grep -cE 'gorm:"foreignKey:[^"]*;references:[^"]*;constraint:OnDelete:'` = **3**（已实测：修复版 3 / 损坏版 2，能报出缺陷）；③ 最终还是靠 `\d user_memory` 的 3 个 FK 兜底 |
 
 ### 4.4 必须亲眼看到的证据（A 段 · 现在就能全跑）
 
@@ -359,6 +360,8 @@ grep -cE 'gorm:"[^"]*check:'              internal/model/user_memory.go   # 期�
 grep -cE 'json:"-.{0,2}$'                 internal/model/user_memory.go   # 期望 7（4 数据列 + 3 关联字段）
 grep -cE '^\s*MemoryType +MemoryType +`'  internal/model/user_memory.go   # 期望 1（不能 grep "MemoryType string"）
 grep -c  'gorm:"column:'                  internal/model/user_memory.go   # 期望 10
+# 三个关联 tag 的三个 key 必须齐全（少一个是静默失败：build/vet/gofmt 全部照过）
+grep -cE 'gorm:"foreignKey:[^"]*;references:[^"]*;constraint:OnDelete:' internal/model/user_memory.go   # 期望 3
 #    ⚠️ 上一步只数数据列。要验"对外字段恰好 6 个"必须再排除 json:"-"，且【三步都要写】：
 #    只跑前两步会输出 10 行（10 个数据列里 4 个是 json:"-"），看到 10 不等于失败
 grep 'gorm:"column:' internal/model/user_memory.go | grep -oE 'json:"[^"]*"' | grep -v 'json:"-"' | wc -l   # 期望 6
@@ -449,6 +452,7 @@ docker compose -f deploy/docker-compose.dev.yml exec -T postgres \
 | 2026-09-15 | spec / plan 第 1 版落地。定下 6 项设计决策（排序含 `id` 兜底、缺参 `4001`、归属单独判定、`SET NULL`、`MemoryType` 不加 DB CHECK、`CreateBatch` 进仓储层），记录 7 项待确认与 1 项契约空白 | 分工未定；`JWTAuth` 是空壳 |
 | 2026-09-15 | **第 2 版：并入三项决策（D1-D3）** —— ① **范围收窄到模型层**：§1 拆成「本分支 6 步 / 交接成员 1 的 H0-H7」，§2 文件清单分 A/B，§3.2-3.5 标为「交接设计」；② **只做模型层验证**：§4 审查计划拆成 A 段（现在就做，本分支）/ B 段（接口层启用），**A 段的外键行为验证改成 SQL 级**（不需要接口层），§5 风险同步；③ **契约空白只记录**：步骤 6 只广播、不动全局文件 | **无阻塞**——步骤 1-3（模型层）今天就能全做完 |
 | 2026-09-15 | **第 3 版：模型层落地 + 分组 A 全绿（17 项）** —— `internal/model/user_memory.go` 新增（10 列 + 3 关联字段 + `MemoryType`/3 常量 + **必需的 `TableName()`**），`migrate.go` 追加 1 行；§4.4 的证据命令全部换成**实跑过的版本**（凭据走 `deploy/.env`、grep 锚定 tag、临时库隔离）；修掉 **6 处会误伤正确代码的验收写法** + **1 处机制写反**（`embedding_status` 的默认值走 GORM 而非 DB）。**代码留在工作区，未提交**（用户指定） | **无阻塞**——模型层交付完毕。接口层（H0-H7）待与成员 1 对齐；契约空白广播待发 |
+| 2026-09-15 | **第 4 版：修复 CI 报错 + 补一条静默缺陷检查** —— `62d10fa`（非本分支产出，已推送）里的 `user_memory.go` 有**两处损坏**：① 结构体闭合 `}` 丢失 → CI 报 `147:1 expected '}' found 'func'`；② `SourceMessage` 的 gorm tag 被截断成 `gorm:"...;constraint:OnDelete:SET NULL"`，`foreignKey` / `references` 丢失 → **`go build` / `vet` / `gofmt` 全部照过**。修复提交 `f3c7d08` 已推送（fast-forward，未 force）。**新增 §4.3 高危点 9** + §4.4 的 tag 完整性检查（已实测：修复版 = 3 / 损坏版 = 2，确实能报出缺陷）。修复后在临时库重跑了建表验证，3 个 FK 与 SET NULL 行为全部正确 | 暴露了一个验收盲区：原 A9 全部是"查有没有违规"，**没有一条查 tag 是否完整**，而缺 key 恰恰不报错。补上后这类损坏在 code 层就能拦住，不必等到 `\d` |
 
 **实测原始输出**（§4.4 的 A0-A10，逐条）：
 
