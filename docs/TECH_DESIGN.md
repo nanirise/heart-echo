@@ -1,6 +1,6 @@
 # HeartEcho 技术文档
 
-> 版本：v0.1 ｜ 最后更新：2026-09-10
+> 版本：v0.1 ｜ 最后更新：2026-09-15
 > 配套文档：[项目概览](../README.md) ｜ [团队协作文档](COLLABORATION.md)
 
 ---
@@ -781,12 +781,16 @@ func Recovery(logger *zap.Logger) gin.HandlerFunc {
         defer func() {
             if err := recover(); err != nil {
                 logger.Error("panic recovered",
+                    zap.String("traceId", c.GetString(ContextKeyTraceID)),
                     zap.Any("error", err),
                     zap.String("path", c.Request.URL.Path),
                     zap.String("method", c.Request.Method),
                     zap.Stack("stack"),
                 )
-                response.Fail(c, errcode.ErrInternal) // 不向前端泄漏堆栈
+                // 响应头已发出（如 SSE 流到一半崩溃）时不能再写 JSON，会搅乱响应体
+                if !c.Writer.Written() {
+                    response.Fail(c, errcode.ErrInternal) // 不向前端泄漏堆栈
+                }
                 c.Abort()
             }
         }()
@@ -806,20 +810,27 @@ func BizErrorHandler(logger *zap.Logger) gin.HandlerFunc {
             return
         }
         err := c.Errors.Last().Err
+        traceID := c.GetString(ContextKeyTraceID)
 
+        // 用 errors.As 而非类型断言：错误可能被 fmt.Errorf("%w") 包过一层
         var bizErr *errcode.BizError
         if errors.As(err, &bizErr) {
             // 5xxx 记 error 级日志并带原始错误；4xxx 记 warn 级即可
             if bizErr.Code >= 5000 {
-                logger.Error("business error", zap.String("code_msg", bizErr.Code.Message()), zap.Error(bizErr.Err))
+                logger.Error("business error",
+                    zap.String("traceId", traceID),
+                    zap.String("codeMsg", bizErr.Code.Message()),
+                    zap.Error(bizErr.Err))
             } else {
-                logger.Warn("business error", zap.String("code_msg", bizErr.Code.Message()))
+                logger.Warn("business error",
+                    zap.String("traceId", traceID),
+                    zap.String("codeMsg", bizErr.Code.Message()))
             }
             response.Fail(c, bizErr.Code)
             return
         }
 
-        logger.Error("unknown error", zap.Error(err))
+        logger.Error("unknown error", zap.String("traceId", traceID), zap.Error(err))
         response.Fail(c, errcode.ErrInternal)
     }
 }
@@ -1023,8 +1034,9 @@ func JWTAuth(secret string) gin.HandlerFunc {
             return
         }
         tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
-        claims, err := jwtutil.ParseToken(tokenStr, secret)
+        claims, err := jwt.ParseToken(tokenStr, secret) // pkg/jwt，不直接引 golang-jwt
         if err != nil {
+            // 判 pkg/jwt 暴露的哨兵错误，调用方不需要 import 底层库
             if errors.Is(err, jwt.ErrTokenExpired) {
                 _ = c.Error(errcode.New(errcode.ErrTokenExpired))
             } else {
