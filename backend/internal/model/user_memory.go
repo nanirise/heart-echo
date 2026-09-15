@@ -133,10 +133,13 @@ type UserMemory struct {
 	Persona Persona `gorm:"foreignKey:PersonaID;references:ID;constraint:OnDelete:CASCADE" json:"-"`
 	// ⚠️ 唯一一个 SET NULL，也是唯一一个**指针关联**：值类型会让 GORM 把它当"必有行"，
 	//    与 SET NULL 的语义冲突，且零值 ChatMessage 会被当成一个待保存的实体。
-	//    tag 里 "SET NULL" 中间的空格是安全的：GORM 按 ; → , → : 三级切分后会把冒号后的
-	// 注：值内部含空格是安全的，GORM 拼 DDL 时是 " ON DELETE " + OnDelete，
-	// 值为 "SET NULL" 时最终渲染为 ON DELETE SET NULL。不要写成 SET_NULL。
-	SourceMessage *ChatMessage `gorm:"...;constraint:OnDelete:SET NULL" json:"-"`
+	//    tag 里 "SET NULL" 中间的空格是安全的：GORM 按 ; → , → : 三级切分后会把冒号后的多段值
+	//    拼回，只有 key 会被大写化。拼 DDL 时是 " ON DELETE " + OnDelete，所以值 "SET NULL"
+	//    最终渲染为 ON DELETE SET NULL——不要写成 SET_NULL。
+	//   ⛔ foreignKey / references 两个 key 一个都不能省：少了它们 GORM 会退回按约定推断关联，
+	//      可能指向别的字段或干脆建不出这条外键，而 go build 照样通过——静默失败。
+	SourceMessage *ChatMessage `gorm:"foreignKey:SourceMessageID;references:ID;constraint:OnDelete:SET NULL" json:"-"`
+}
 
 // TableName 显式指定表名。
 //
