@@ -1,15 +1,15 @@
 # PROGRESS
 
-最后更新：2026-09-14
+最后更新：2026-09-15
 
 ## 成员1
-- 在做：分支 `feature/backend-bootstrap`（spec: `docs/specs/backend-skeleton/`；spec 里写的 `feature/backend-skeleton` 已随 PR #12 合并，实际用的是 `feature/backend-bootstrap`）。plan 10 步**完成 6 步**——`pkg/{errcode,response,logger,jwt}` 已合入 `develop`；Step 6 `internal/config` + `backend/.env.example` 已完成、本地验证通过（4 条用例），本分支待开 PR
-- 下一步：① 提交 Step 6（`internal/config/` + `backend/.env.example` + `backend/go.{mod,sum}`）→ push → 开 PR；② 之后 Step 7 中间件 ×5 → Step 8 `router.go` + `cmd/server/main.go` → Step 10 冒烟验收
+- 在做：分支 `feature/backend-bootstrap`（spec: `docs/specs/backend-skeleton/`；spec 里写的 `feature/backend-skeleton` 已随 PR #12 合并，实际用的是 `feature/backend-bootstrap`）。plan 10 步**完成 8 步**——`pkg/{errcode,response,logger,jwt}`、`internal/config`、`backend/.env.example` 已合入 `develop`（PR #12 / #20、#13）；Step 7 中间件 ×5 已完成，本地 `build`/`vet` 全绿，本分支待开 PR
+- 下一步：① 提交 Step 7（`backend/internal/middleware/` + `backend/go.{mod,sum}` + TECH_DESIGN §4.4/§4.7 修正）→ push → 开 PR；② 之后 Step 8 `router.go` + `cmd/server/main.go` → Step 10 冒烟验收
 - 卡住：无
 - 改了哪些文件：
-  - 已合入 `develop`：`backend/pkg/{errcode,response,logger,jwt}/`
-  - 本分支新增：`backend/internal/config/{config.go,config_test.go}`、`backend/.env.example`、`backend/go.{mod,sum}`（新增 `caarlos0/env/v11`、`godotenv`）
-  - 全局契约：`AGENTS.md` §4.3、`docs/API_CONTRACT.md` §2/§4/§5/§7/§9/§10
+  - 已合入 `develop`：`backend/pkg/{errcode,response,logger,jwt}/`、`backend/internal/config/`、`backend/.env.example`
+  - 本分支新增：`backend/internal/middleware/{recovery,logger,cors,biz_error,jwt}.go`；`backend/go.{mod,sum}`（新增 `gin-contrib/cors`）
+  - 全局契约：`AGENTS.md` §4.3、`docs/API_CONTRACT.md` §2/§4/§5/§7/§9/§10、`docs/TECH_DESIGN.md` §4.4/§4.7（示例代码与实际实现对不上，已修正）
   - 本功能文档：`docs/specs/backend-skeleton/{spec.md,plan.md}`
 
 ## 成员2
@@ -42,9 +42,20 @@
   - 涉及文件：`backend/.env.example`（新增）、`backend/internal/config/config.go`（新增）
   - 其他人要做什么：本地 `cp backend/.env.example backend/.env` 后**必须填 `JWT_SECRET`（≥32 字符）和 `AI_SERVICE_TOKEN`**——这两个标了 `required`，缺了服务直接起不来；`AI_SERVICE_TOKEN` 要与 `ai-service` 侧的值一致
   - **成员 3**：`MOMENT_JOB_INTERVAL` / `PROACTIVE_JOB_INTERVAL` 请自行追加进 `backend/.env.example`，按 spec §3.3 的约定我**没有留占位行**
+- 有（2026-09-15 新增，**不是 HTTP 契约变更**，是 Go 内部接口；**成员 2、成员 3 的阻塞解除了**）：
+  - 改了什么：`backend/internal/middleware` 落地，对外可用的东西：
+    - `middleware.ContextKeyUserID` = `"userId"`、`middleware.ContextKeyUsername` = `"username"`、`middleware.ContextKeyTraceID` = `"traceId"`
+      —— 常量名按 TECH_DESIGN §4.7。**取 userID 一律用常量，别手写 `"userId"`**
+    - `middleware.BizErrorHandler(logger *zap.Logger) gin.HandlerFunc` —— handler 里写 `_ = c.Error(err)` 上抛，响应由它统一出口
+    - `middleware.JWTAuth(secret string) gin.HandlerFunc` —— ⚠️ **空壳，直接放行，等于没有鉴权**
+  - 涉及文件：`backend/internal/middleware/*.go`、`docs/TECH_DESIGN.md` §4.4/§4.7
+  - 其他人要做什么：
+    - ① 写 handler 时错误只 `_ = c.Error(err)`，**不调 `response.Fail`**；成功才自己写响应
+    - ② 越权防线取 userID 写 `c.GetUint64(middleware.ContextKeyUserID)`。⚠️ **本轮 JWTAuth 是空壳，取到的一律是 0**，别把它当成"已鉴权"
+    - ③ 若你按 TECH_DESIGN §4.7 的**旧示例**写了 `jwtutil.ParseToken` 或 import 了 `golang-jwt`，改掉：用 `pkg/jwt` 的 `ParseToken` 和它暴露的 `ErrTokenExpired` / `ErrTokenInvalid`，配 `errors.Is` 判断
 
 ## 待确认
 - 错误码规则已于 2026-09-13 定为：**资源越权 → `4043`**、**功能越权 → `4030`**、**`4031` 废弃**。两处文档均已同步：
 - ✅ `docs/specs/persona-model/{spec.md,plan.md}`（PR #14 `ed0887d`，`4040`→`4043`、`4031`→`4030` 全量替换）
 - ✅ `docs/dev/MEMBER_3_DATA_MOMENTS_DEPLOY.md` 第 83、223 行（2026-09-14 复查确认，已改为 `4043`）
-- ⬜ **待修订**：`docs/specs/backend-skeleton/spec.md` §3.3 写的是"只写入自己负责的 **4 组**变量"，与实际写进 `backend/.env.example` 的 **14 个**不一致。依据：[MASTER §5](docs/dev/MASTER.md) 明写"完整清单见技术文档 §4.6"
+- ✅ 已于 2026-09-14 修订：`docs/specs/backend-skeleton/spec.md` §3.3 原写"只写入自己负责的 **4 组**变量"，与实际写进 `backend/.env.example` 的 **14 个**不一致。依据 [MASTER §5](docs/dev/MASTER.md) 明写"完整清单见技术文档 §4.6"，已按 §4.6 的 16 个减掉成员 3 的 2 个 JOB 变量，落定为 14 个

@@ -1,7 +1,7 @@
 # plan · 后端骨架搭建
 
 > 对应 spec：[spec.md](spec.md) ｜ 分支：`feature/backend-bootstrap`
-> 负责人：成员 1 ｜ 最后更新：2026-09-14
+> 负责人：成员 1 ｜ 最后更新：2026-09-15
 
 ---
 
@@ -15,9 +15,9 @@
 | 4 | 日志封装 | `pkg/logger/logger.go` | 提供 `*zap.Logger`，可被中间件注入 | ✅ 已完成（已合入 develop） |
 | 5 | JWT 基础包 | `pkg/jwt/{jwt.go,jwt_test.go}` | Access 2h / Refresh 7d，含 `TokenType` | ✅ 已完成（已合入 develop） |
 | 6 | 配置加载 | `internal/config/{config.go,config_test.go}` | 从环境变量读到 `DB_*` / `JWT_SECRET` / `AI_SERVICE_*` | ✅ 已完成（待 PR） |
-| 7 | 中间件 ×5 | `internal/middleware/*.go` | 4 个可用；JWTAuth 空壳且带 `TODO` 标记 | 未开始 |
+| 7 | 中间件 ×5 | `internal/middleware/*.go` | 4 个可用；JWTAuth 空壳且带 `TODO` 标记 | ✅ 已完成（待 PR） |
 | 8 | 装配与路由 | `cmd/server/main.go`、`handler/router.go` | GORM 初始化 + 中间件链装配 + `RegisterXxxRoutes` 挂载点 + `/health` | 未开始 |
-| 9 | 环境变量模板 | `backend/.env.example` | 只含我负责的 4 组变量；`.env` 未入库 | 未开始 |
+| 9 | 环境变量模板 | `backend/.env.example` | 含 14 个变量（清单依据见 spec §3.3）；`.env` 未入库 | ✅ 已完成（随 Step 6 由 PR #20 合入） |
 | 10 | 冒烟验收 | — | spec §5 全部勾上 | 未开始 |
 
 **优先级说明**：**Step 2 → 3 优先于其余全部**。成员 2 的 spec 把 `pkg/response` 与 `pkg/errcode` 标为「待确认」，这是当前并行度最大的阻塞点；`pkg/response` 的类型又依赖 `pkg/errcode`，所以顺序不能倒。
@@ -32,8 +32,8 @@
 |---|---|---|---|
 | #12 | Step 2–3 | `pkg/errcode` + `pkg/response` | ✅ 已合入 develop |
 | — | Step 4–5 | `pkg/logger` + `pkg/jwt` | ✅ 已合入 develop（未单独开 PR，随其他合并进入） |
-| 待开 | Step 6 | `internal/config` + `backend/.env.example` | 代码已完成，待 PR |
-| 待开 | Step 7 | 中间件 ×5 | 未开始 |
+| #20 | Step 6 + 9 | `internal/config` + `backend/.env.example` | ✅ 已合入 develop |
+| 待开 | Step 7 | 中间件 ×5 | 代码已完成，待 PR |
 | 待开 | Step 8–10 | 路由装配 + 冒烟验收 | 未开始 |
 
 **2026-09-14 调整**：原表把 Step 6–7 合成一个 PR、`.env.example` 挂在 Step 8–10。现在改成 Step 6 单独一个 PR，并把 `.env.example` 并进它——理由是 `config.go` 读哪些变量和模板列哪些变量是同一件事的两面，分开写必然对不上。
@@ -55,6 +55,9 @@
 | `backend/pkg/jwt/jwt.go` | 令牌生成与解析 | **成员 3**（`JWTAuth` 的消费方） |
 | `backend/internal/config/config.go` | 配置结构体 + 加载 | 成员 1、成员 3 |
 | `backend/internal/config/config_test.go` | 校验 required 与密钥长度 | 成员 1（提交前必跑） |
+| `backend/internal/middleware/recovery.go` | panic 捕获；包文档写在这里 | 成员 1（其余中间件都挂在它里面） |
+| `backend/internal/middleware/logger.go` | 访问日志 + traceId；`ContextKey*` 常量定义在此 | **成员 2、成员 3**（取 userID 用常量，别手写字符串） |
+| `backend/internal/middleware/cors.go` | 跨域 | 成员 2（前端本地联调） |
 | `backend/internal/middleware/biz_error.go` | 业务错误统一出口 | **成员 2、成员 3**（错误全靠它出） |
 | `backend/internal/middleware/jwt.go` | 鉴权拦截（本轮空壳） | 成员 3 |
 | `backend/internal/handler/router.go` | 路由汇总 + 中间件链 + 挂载点 | **成员 2、成员 3** |
@@ -87,6 +90,8 @@
 - 函数上方写 `TODO(auth-login): 实现 TokenType 校验与 4010/4011/4012 分发`
 - 在 spec §2.3 与本节各留一处记录，保证 `auth-login` 不会漏掉
 
+**已落实**（2026-09-15）：三条都做到。`jwt.go` 的 `TODO` 里另附了 TECH_DESIGN §4.7 的五步实现清单和错误码对应关系，`auth-login` 照着填即可。
+
 ### 3.4 本轮的技术选型
 
 | 项 | 值 | 说明 |
@@ -95,6 +100,8 @@
 | 配置库 | `caarlos0/env/v11` | 技术文档 §4.9 |
 | `.env` 加载 | `godotenv` | 技术文档 §4.9 只写了"`.env` 文件加载"没点库名。`caarlos0/env` **自己不读文件**，只认环境变量；而 AGENTS §2 的流程是 `cp ... .env` 后直接 `go run`，中间没人 `export`，所以必须有东西把文件灌成环境变量 |
 | 日志 | `zap` | 技术文档 §4.4 |
+| 跨域 | `gin-contrib/cors` | 技术文档 §4.5。`go get` 时会顺带升级一批间接依赖（`golang.org/x/crypto` 等），`go.mod` diff 偏大属正常 |
+| Context 键名 | `ContextKey{TraceID,UserID,Username}` | 技术文档 §4.7 定的名字。成员 2、成员 3 的 spec 已按这些名字写，**不可改名** |
 | ORM | `gorm` + `postgres` driver | 已在 `go.mod`；仅初始化连接，**不调 `AutoMigrate`**（那是成员 3 的 `model/migrate.go`） |
 | `/health` 深度 | 只报进程存活 | 本轮决定，见 spec §2.1 |
 
@@ -130,3 +137,6 @@
 | 2026-09-13 | 按实际状态更新 Step 1-3 的状态列 | 无 |
 | 2026-09-14 | 更正：Step 4–5（`pkg/logger`、`pkg/jwt`）早已提交并合入 `develop`，此前状态列写"未开始"与事实不符 | 无 |
 | 2026-09-14 | Step 6 `internal/config` 完成（`config.go` + `config_test.go` 4 条用例，`build`/`vet`/`test` 全绿）；`backend/.env.example` 一并写入；新增依赖 `caarlos0/env/v11`、`godotenv`。PR 划分调整为 Step 6 单独一个 PR | 无 |
+| 2026-09-14 | Step 6 + 9 由 **PR #20 合入 develop** | 无 |
+| 2026-09-15 | Step 7 中间件 ×5 完成（`recovery` / `logger` / `cors` / `biz_error` / `jwt` 空壳），`build`/`vet` 全绿。新增依赖 `gin-contrib/cors` | 无 |
+| 2026-09-15 | TECH_DESIGN §4.4 / §4.7 的示例代码与实际实现对不上（`jwtutil` → `pkg/jwt`、补 `traceId`、补 `Written()` 判断），已同步修正并在群里广播 | 无 |
