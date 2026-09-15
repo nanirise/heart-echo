@@ -16,12 +16,12 @@
 | # | 步骤 | 产出 | 状态 |
 |---|------|------|:----:|
 | 1 | 写 `stores/auth.ts` 骨架：state / getters / 动作签名 | 可被 import，无请求逻辑 | ✅ |
-| 2 | 写 `api/request.ts`：axios 实例 + 请求拦截器（附加 token） | 能带 token 发请求 | ⬜ |
-| 3 | 写响应拦截器：`code === 200` 解包，否则抛错 | 返回值就是业务数据 | ⬜ |
-| 4 | 实现 `4012` 刷新重放 + 并发锁 | 过期后无感续期 | ⬜ |
-| 5 | 实现 `4010` / `4011` / `4014` 登出分支 | 彻底失效即登出 | ⬜ |
-| 6 | 补全 `auth.ts` 的 login / register / logout / refreshToken 动作，接上 `request.ts` | 完整闭环 | ⬜ |
-| 7 | 配置持久化（`pinia-plugin-persistedstate` 3.x），本地自查 | 刷新页面仍登录 | ⬜ |
+| 2 | 写 `api/request.ts`：axios 实例 + 请求拦截器（附加 token） | 能带 token 发请求 | ✅ |
+| 3 | 写响应拦截器：`code === 200` 解包，否则抛错 | 返回值就是业务数据 | ✅ |
+| 4 | 实现 `4012` 刷新重放 + 并发锁 | 过期后无感续期 | ✅ |
+| 5 | 实现 `4010` / `4011` / `4014` 登出分支 | 彻底失效即登出 | ✅ |
+| 6 | 补全 `auth.ts` 的 login / register / logout / refresh 动作，接上 `request.ts` | 完整闭环 | ✅ |
+| 7 | 配置持久化（`pinia-plugin-persistedstate` 3.x），本地自查 | 刷新页面仍登录 | ✅ |
 
 > 为什么 1 在 2 前面：`request.ts` 的刷新逻辑要调 `auth.ts`，先立骨架避免来回改。
 
@@ -93,6 +93,14 @@ const WHITE_LIST = ['/auth/login', '/auth/register', '/auth/refresh']
 - 兑现 `VITE_USE_MOCK`：为 `true` 时不发真实请求（Mock 策略见 §4）
 
 ---
+### 3.6 登出跳转的选型
+
+登出用 `window.location.assign('/login')` 整页跳转，**不用** `router.push`：
+
+- `api/request.ts` 是底层网络模块，让它 `import` 路由层会造成**反向依赖**（路由是上层）
+- 登出是一次性动作，整页跳转还能顺带清空内存里的残留状态
+
+若后续想改成 `router.push`，建议保留现状。
 
 ## 4. 风险与对策
 
@@ -103,7 +111,8 @@ const WHITE_LIST = ['/auth/login', '/auth/register', '/auth/refresh']
 | refresh 请求自身走拦截器 | 死循环刷新 | 白名单跳过 + 标记跳过刷新 |
 | 持久化语法用错版本 | 编译报错 | 按 3.x 的 `key` / `paths` 写 |
 | 契约 §13 三人签署未完成 | 字段若变，token 结构返工 | 本分支只依赖 §3，变更风险低 |
-| 登录页尚未存在 | 登出后无页可跳 | 本分支只做 `router.push('/login')`，页面留分支 3-B/后续 |
+| 登录页尚未存在 | 登出后整页跳到一个还不存在的路由 | 本分支用 `window.location.assign('/login')`，登录页本身留分支 3-B |
+
 
 ---
 
@@ -113,4 +122,6 @@ const WHITE_LIST = ['/auth/login', '/auth/register', '/auth/refresh']
 |------|------|
 | 2026-09-15 | 建立 spec 与 plan，确定方案 B（拆两支），本支负责 auth + request |
 | 2026-09-15 | 完成 spec/plan 提交（e1fe8e7）；auth.ts 骨架完成并通过 tsc（4bfc19e） |
+| 2026-09-15 | `auth.ts` 补上 login / register / logout / refresh；`request.ts` 导出 `refreshAccessToken` 供 store 复用 |
+| 2026-09-15 | 持久化配置完成（`key` / `paths`）。**代码层已验证（typecheck 通过）；"刷新页面仍登录"需等后端 + 登录页就绪后联调确认** |
 

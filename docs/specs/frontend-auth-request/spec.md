@@ -34,7 +34,7 @@
 | 文件 | 职责 |
 |------|------|
 | `src/api/request.ts` | axios 实例；请求拦截器附加 `Authorization`；响应拦截器解包与错误分发；`4012` 刷新重放 + 并发锁 |
-| `src/stores/auth.ts` | Pinia store；保存 `accessToken` / `refreshToken` / `user`；提供 `login` / `register` / `logout` / `refreshToken` 动作与 `isLogin` 计算属性；持久化到 localStorage |
+| `src/stores/auth.ts` | Pinia store；保存 `accessToken` / `refreshToken` / `user`；提供 `login` / `register` / `logout` / `refresh` 动作与 `isLogin` 计算属性；持久化到 localStorage |
 
 ### 2.2 不做什么（明确排除，防止范围蔓延）
 
@@ -96,7 +96,7 @@
 - [ ] 多个请求同时遇到 `4012` 时，refresh **只发起一次**（并发锁）
 - [ ] refresh 成功后 `accessToken` 与 `refreshToken` **两者都更新**
 - [ ] 遇到 `4010` / `4011` / `4014` 时清空登录态并跳转登录页，且**不重试**
-- [ ] `auth.ts` 提供 `login` / `register` / `logout` / `refreshToken` 与 `isLogin`
+- [ ] `auth.ts` 提供 `login` / `register` / `logout` / `refresh` 与 `isLogin`
 - [ ] 注册成功后直接进入登录态（契约 §3.1「注册即登录」，不再走登录页）
 - [ ] 登录态持久化，手动刷新浏览器后仍保持登录
 - [ ] `npx tsc --noEmit` 零错误
