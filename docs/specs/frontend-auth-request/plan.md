@@ -15,7 +15,7 @@
 
 | # | 步骤 | 产出 | 状态 |
 |---|------|------|:----:|
-| 1 | 写 `stores/auth.ts` 骨架：state / getters / 动作签名 | 可被 import，无请求逻辑 | ⬜ |
+| 1 | 写 `stores/auth.ts` 骨架：state / getters / 动作签名 | 可被 import，无请求逻辑 | ✅ |
 | 2 | 写 `api/request.ts`：axios 实例 + 请求拦截器（附加 token） | 能带 token 发请求 | ⬜ |
 | 3 | 写响应拦截器：`code === 200` 解包，否则抛错 | 返回值就是业务数据 | ⬜ |
 | 4 | 实现 `4012` 刷新重放 + 并发锁 | 过期后无感续期 | ⬜ |
@@ -112,3 +112,5 @@ const WHITE_LIST = ['/auth/login', '/auth/register', '/auth/refresh']
 | 日期 | 进展 |
 |------|------|
 | 2026-09-15 | 建立 spec 与 plan，确定方案 B（拆两支），本支负责 auth + request |
+| 2026-09-15 | 完成 spec/plan 提交（e1fe8e7）；auth.ts 骨架完成并通过 tsc（4bfc19e） |
+
