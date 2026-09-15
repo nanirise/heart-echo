@@ -19,7 +19,7 @@ const baseURL = import.meta.env.VITE_API_BASE_URL
  * `/auth/refresh` 保留在这里是双保险 —— 刷新实际走下面的 refreshClient，
  * 但万一有人拿主实例调它，也不会带上过期的 token。
  */
-const WHITE_LIST = ['/auth/login', '/auth/register', '/auth/refresh']
+const WHITE_LIST = ['/auth/login', '/auth/register', '/auth/refresh', '/health']
 
 /** 请求没能抵达后端（断网 / 超时 / 跨域）时使用的伪错误码，不属于后端错误码表 */
 export const NETWORK_ERROR_CODE = -1
