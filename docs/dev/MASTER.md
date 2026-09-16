@@ -233,11 +233,20 @@ func RegisterPersonaRoutes(rg *gin.RouterGroup, h *PersonaHandler) {
 
 ```go
 // internal/handler/router.go（成员 1 的文件，只加一行）
+
+// 免鉴权区：白名单只有 4 个端点，只有它们挂 api 组
 api := r.Group("/api/v1")
-RegisterAuthRoutes(api, authHandler)
-RegisterChatRoutes(api, chatHandler)
-RegisterPersonaRoutes(api, personaHandler)   // ← 成员 3 通知成员 1 加这一行
+RegisterAuthRoutes(api, authHandler)              // register / login / refresh
+api.GET("/health", healthHandler)
+
+// 需鉴权区：其余全部业务路由挂 protected 组
+protected := api.Group("")
+protected.Use(middleware.JWTAuth(cfg.JWT.Secret))
+RegisterChatRoutes(protected, chatHandler)
+RegisterPersonaRoutes(protected, personaHandler)  // ← 成员 3 通知成员 1 加这一行
 ```
+
+⚠️ **挂错组不报错，只是接口裸奔**：`api` 组不校验 Token，业务路由误挂上去的后果是任何人都能调，而且服务照常启动、日志一切正常。判断口诀：**除了契约 §1 白名单那 4 个，其余一律挂 `protected`。**
 
 **约定**：新增模块时，Owner 写好 `RegisterXxxRoutes` 后**在群里说一声**，由成员 1 在 `router.go` 加一行（或 Owner 自行加，两人错开时间即可，不要同时改这个文件）。
 
