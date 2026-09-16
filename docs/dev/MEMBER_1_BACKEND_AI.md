@@ -22,17 +22,21 @@
 
 ## 1. 准备期（1-2 天）
 
-- [ ] 本地环境：Go ≥1.21、Docker Desktop、Python ≥3.10
-- [ ] `go mod init github.com/<org>/heart-echo/backend`，建立目录骨架（技术文档 [§8](../TECH_DESIGN.md#8-目录结构)）
-- [ ] `cp backend/.env.example backend/.env`，本地起 PostgreSQL 后确认能连
-- [ ] 写 `pkg/errcode/errcode.go` + `errcode_test.go`（**交接物 #2**）
-- [ ] 写 `pkg/response/response.go`（`Success[T]` / `Fail`，`Fail` 不接受 message 参数）
-- [ ] 写 `internal/config/config.go`（用 `caarlos0/env` 加载）
-- [ ] 与成员 3 对齐 `model/*.go` 字段（他交付，你消费）
-- [ ] 参与契约评审：过一遍 [总纲 §4 端点表](MASTER.md#42-端点归属表)，确认字段与错误码
-- [ ] 确认路由注册方式（[总纲 §4.5](MASTER.md#45-路由注册方式成员-1-冻结全员遵守)）并告诉另两人
+> 进度更新：2026-09-16
+>
+> - `[x]` = 已完成并验证过；`[ ]` 后面**加粗的**是未完成项
 
-**准备期末判据**：`go build ./...` 通过；`go test ./pkg/errcode/` 通过；`curl localhost:8080/api/v1/health` 返回 `{"code":200,...}`。
+- [x] 本地环境：Go —— 已可用（`go build` / `vet` / `test` 全绿）。Docker Desktop、Python 未在本机验证过
+- [x] `go mod init` —— module 实际是 `github.com/nanirise/heart-echo/backend`（`<org>` 占位由实际账号名取代）；目录骨架已建
+- [ ] **`cp backend/.env.example backend/.env`，本地起 PostgreSQL 后确认能连** —— 未做。本机没有 `backend/.env`，至今的冒烟测试都是临时传环境变量跑的；`/health` 的 `ok` 路径因此**还没有实测过**
+- [x] 写 `pkg/errcode/errcode.go` + `errcode_test.go`（**交接物 #2**）—— PR #12 合入 `develop`
+- [x] 写 `pkg/response/response.go`（`Success[T]` / `Fail`，`Fail` 不接受 message 参数）—— PR #12 合入 `develop`
+- [x] 写 `internal/config/config.go`（用 `caarlos0/env` 加载）—— PR #20 合入 `develop`
+- [~] 与成员 3 对齐 `model/*.go` 字段（他交付，你消费）—— 已交付 5 个（`user` / `persona` / `chat_message` / `user_memory` / `user_profile`）；`proactive_setting` 等未落地，不阻塞已完成的步骤
+- [ ] **参与契约评审**：过一遍 [总纲 §4 端点表](MASTER.md#42-端点归属表)，确认字段与错误码 —— [API_CONTRACT](../API_CONTRACT.md) §13 三人签署仍为空
+- [ ] **确认路由注册方式（[总纲 §4.5](MASTER.md#45-路由注册方式成员-1-冻结全员遵守)）并告诉另两人** —— 方式已定稿（见 §4.5，业务路由挂 `protected` 组），广播文案已备，待发出
+
+**准备期末判据**（2026-09-16 实测）：`go build ./...` ✅；`go test ./pkg/errcode/` ✅；`go run ./cmd/server` + `curl localhost:8080/api/v1/health` 返回 HTTP 200 与 `{"code":200,...}` ✅（`data.status` 为 `degraded`，因本机无 PostgreSQL / ai-service）。
 
 ---
 

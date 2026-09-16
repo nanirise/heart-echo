@@ -1,6 +1,6 @@
 # spec · 后端骨架搭建
 
-> 功能名：backend-skeleton ｜ 分支：`feature/backend-skeleton`
+> 功能名：backend-skeleton ｜ 分支：`feature/backend-routing`（本 spec 跨多个分支交付，PR 划分见 [plan §1.1](plan.md#11-pr-划分)）
 > 负责人：成员 1 ｜ 状态：草稿（待审核）
 > 创建：2026-09-13 ｜ 最后更新：2026-09-14
 > 关联：[开发总纲 §3 准备期交接清单](../../dev/MASTER.md#3-准备期交接清单p0不完成不进-week-1) ｜ [成员 1 开发文档 §1](../../dev/MEMBER_1_BACKEND_AI.md) ｜ [接口契约](../../API_CONTRACT.md) ｜ [技术文档 §4 / §8](../../TECH_DESIGN.md)
@@ -45,7 +45,8 @@
 | 前端一切 | 成员 2 |
 | Dockerfile / docker-compose / Nginx | 成员 3 |
 
-> 本功能范围内不出现业务 handler，`handler/` 目录只放 `router.go`。
+> 本功能范围内不出现业务 handler，`handler/` 目录只放 `router.go` 与 `health_handler.go`。
+> `/health` 要真去探两个依赖（见 §2.1），有自己的超时与取值逻辑，与"汇总注册"不是一件事，因此单独成文件。
 
 ### 2.3 一个刻意的不对称：JWTAuth 是空壳
 
@@ -114,14 +115,16 @@
 
 ## 5. 验收标准
 
-- [ ] `cd backend && go build ./...` 通过
-- [ ] `cd backend && go vet ./...` 通过
-- [ ] `cd backend && go test ./pkg/errcode/` 通过（三集合一致性校验生效）
-- [ ] `go run ./cmd/server` 能起；`curl localhost:8080/api/v1/health` 返回 HTTP 200，body 为 `{"code":200,"message":...,"data":...,"timestamp":...}`
-- [ ] 中间件链顺序与 AGENTS §4.2 一致
-- [ ] 未鉴权访问任意非白名单路径 —— 本轮为**空壳预期行为**，`auth-login` 负责关闭
-- [ ] `backend/.env.example` 已入库；`git check-ignore backend/.env` 有输出
-- [ ] `pkg/response`、`pkg/errcode` 已推送，成员 2 / 成员 3 确认能 import
+- [x] `cd backend && go build ./...` 通过
+- [x] `cd backend && go vet ./...` 通过
+- [x] `cd backend && go test ./pkg/errcode/` 通过（三集合一致性校验生效）
+- [x] `go run ./cmd/server` 能起；`curl localhost:8080/api/v1/health` 返回 HTTP 200，body 为 `{"code":200,"message":...,"data":...,"timestamp":...}`
+      —— 2026-09-16 实测 body：`{"code":200,"message":"success","data":{"status":"degraded","dependencies":{"aiService":"down","database":"down"}},"timestamp":...}`。`degraded` 是本机无 PostgreSQL / ai-service 时的**预期**结果，2026-09-16 起 `/health` 按契约真探测依赖（见 §6 变更记录）
+- [x] 中间件链顺序与 AGENTS §4.2 一致
+- [ ] 未鉴权访问任意非白名单路径 —— 本轮为**空壳预期行为**，`auth-login` 负责关闭。
+      注：本轮 `protected` 组下暂无路由，这一条要在 `auth-login` 落地后才能真验
+- [x] `backend/.env.example` 已入库；`git check-ignore backend/.env` 有输出
+- [x] `pkg/response`、`pkg/errcode` 已推送，成员 2 / 成员 3 确认能 import
 - [ ] `RegisterXxxRoutes` 注册方式已在群里广播，成员 3 确认按此写 `persona_handler.go`
 
 ## 6. 变更记录
@@ -130,9 +133,10 @@
 |---|---|---|
 | 2026-09-13 | 创建（草稿） | 准备期基础设施，解锁成员 2 / 成员 3 并行开发 |
 | 2026-09-14 | §3.3 变量清单由"4 组"细化为 14 个，并注明依据是技术文档 §4.6 | 原写法是概略描述（只举了 `DB_*`、`JWT_SECRET`、`AI_SERVICE_*`），漏了 `SERVER_PORT`、`GIN_MODE`、`CORS_ALLOW_ORIGINS` 和两个有效期——而这些本来就是 §2.1 In Scope 里 `config.go` 必须读到的 |
+| 2026-09-16 | §2.1 的 `/health` 定为**真探测**两个依赖（原先写"只报进程存活"）；§2.2 允许新增 `handler/health_handler.go`；§4 风险表同步改写 | 与 [API_CONTRACT §11](../../API_CONTRACT.md) 对齐。契约优先级高于技术文档与本 spec 的旧假设，按契约实现 |
 
 ---
 
 ## 7. 待确认（定稿前清空）
 
-**路由注册方式的广播时机**：[总纲 §4.5](../../dev/MASTER.md#45-路由注册方式成员-1-冻结全员遵守)要求由我冻结并告知另两人，但文档里已有示例代码，成员 3 可能已按示例动手。开工前需在群里确认一次：按文档示例为准，还是有调整。
+**路由注册方式的广播时机** —— ✅ 2026-09-16 定论：**按 [总纲 §4.5](../../dev/MASTER.md#45-路由注册方式成员-1-冻结全员遵守) 的示例为准，签名不变**（`RegisterXxxRoutes(rg *gin.RouterGroup, h *XxxHandler)`）。唯一补充：业务路由要挂在 `router.go` 的 `protected` 组上（带 `JWTAuth`），不是挂在 `api` 组上。广播文案已随 Step 8 交付待发。
