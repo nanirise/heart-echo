@@ -213,6 +213,13 @@ Recovery → RequestLogger → CORS → BizErrorHandler → JWTAuth → Handler
 - URL：kebab-case 复数名词，路径参数 camelCase 且与字段同名（`:personaId`）。
 - **JSON 字段一律 camelCase，前后端必须逐字一致**——这是最容易出 bug 的地方。前端 TS interface 字段用 camelCase，不要下划线。
 
+### 5.1 注释纪律（AI 生成代码时必读）
+
+- **只写必要的注释**：说明"为什么"（安全红线、越权防线、非显然的约束），不写"是什么"。
+- **禁止**在 `.go` 业务代码里保留：DDL 原文逐字对照、长篇学习性解释、反例/缺陷注入分析、历史变更故事。
+- **学习内容统一放 `.learn/` 目录**（已在 `.gitignore` 忽略，不进仓库）。
+- 代码里的注释只留三类：① 安全/越权红线；② 非显然的 GORM tag 语义；③ 函数职责一句话。
+
 ## 6. Git 规范
 
 - 分支：`feature/xxx`、`fix/xxx`、`hotfix/xxx`，全小写连字符，禁止中文/空格。**禁止直接 push `main` / `develop`**，一律走 PR（至少 1 人 Approve）。
