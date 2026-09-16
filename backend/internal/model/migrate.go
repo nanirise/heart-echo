@@ -2,8 +2,9 @@ package model
 
 import "gorm.io/gorm"
 
-// AutoMigrate 建表 / 补列的统一入口，由 cmd/server 启动时调用。
-//
+// AutoMigrate 建表 / 补列的统一入口，仅由 cmd/migrate 调用。
+// cmd/server 刻意不调它——两边同时建表会互相干扰。
+
 // 顺序即依赖顺序：被外键引用的表必须排在前面，否则建外键时会失败。
 // 新增模型时在这里追加一行即可。
 //
