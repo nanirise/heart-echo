@@ -15,7 +15,7 @@
 | 4 | 日志封装 | `pkg/logger/logger.go` | 提供 `*zap.Logger`，可被中间件注入 | ✅ 已完成（已合入 develop） |
 | 5 | JWT 基础包 | `pkg/jwt/{jwt.go,jwt_test.go}` | Access 2h / Refresh 7d，含 `TokenType` | ✅ 已完成（已合入 develop） |
 | 6 | 配置加载 | `internal/config/{config.go,config_test.go}` | 从环境变量读到 `DB_*` / `JWT_SECRET` / `AI_SERVICE_*` | ✅ 已完成（待 PR） |
-| 7 | 中间件 ×5 | `internal/middleware/*.go` | 4 个可用；JWTAuth 空壳且带 `TODO` 标记 | ✅ 已完成（待 PR） |
+| 7 | 中间件 ×5 | `internal/middleware/*.go` | 4 个可用；JWTAuth 空壳且带 `TODO` 标记 | ✅ 已完成（PR #23 合入 develop） |
 | 8 | 装配与路由 | `cmd/server/main.go`、`handler/router.go` | GORM 初始化 + 中间件链装配 + `RegisterXxxRoutes` 挂载点 + `/health` | 未开始 |
 | 9 | 环境变量模板 | `backend/.env.example` | 含 14 个变量（清单依据见 spec §3.3）；`.env` 未入库 | ✅ 已完成（随 Step 6 由 PR #20 合入） |
 | 10 | 冒烟验收 | — | spec §5 全部勾上 | 未开始 |
@@ -33,7 +33,7 @@
 | #12 | Step 2–3 | `pkg/errcode` + `pkg/response` | ✅ 已合入 develop |
 | — | Step 4–5 | `pkg/logger` + `pkg/jwt` | ✅ 已合入 develop（未单独开 PR，随其他合并进入） |
 | #20 | Step 6 + 9 | `internal/config` + `backend/.env.example` | ✅ 已合入 develop |
-| 待开 | Step 7 | 中间件 ×5 | 代码已完成，待 PR |
+| #23 | Step 7 | 中间件 ×5 | ✅ 已合入 develop |
 | 待开 | Step 8–10 | 路由装配 + 冒烟验收 | 未开始 |
 
 **2026-09-14 调整**：原表把 Step 6–7 合成一个 PR、`.env.example` 挂在 Step 8–10。现在改成 Step 6 单独一个 PR，并把 `.env.example` 并进它——理由是 `config.go` 读哪些变量和模板列哪些变量是同一件事的两面，分开写必然对不上。
@@ -140,3 +140,4 @@
 | 2026-09-14 | Step 6 + 9 由 **PR #20 合入 develop** | 无 |
 | 2026-09-15 | Step 7 中间件 ×5 完成（`recovery` / `logger` / `cors` / `biz_error` / `jwt` 空壳），`build`/`vet` 全绿。新增依赖 `gin-contrib/cors` | 无 |
 | 2026-09-15 | TECH_DESIGN §4.4 / §4.7 的示例代码与实际实现对不上（`jwtutil` → `pkg/jwt`、补 `traceId`、补 `Written()` 判断），已同步修正并在群里广播 | 无 |
+| 2026-09-15 | Step 7 由 **PR #23 合入 develop**。`ContextKey*` 常量名按 TECH_DESIGN §4.7 对齐（原自拟的 `Ctx*` 作废） | 无 |
