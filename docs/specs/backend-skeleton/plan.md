@@ -1,7 +1,7 @@
 # plan · 后端骨架搭建
 
-> 对应 spec：[spec.md](spec.md) ｜ 分支：`feature/backend-bootstrap`
-> 负责人：成员 1 ｜ 最后更新：2026-09-15
+> 对应 spec：[spec.md](spec.md) ｜ 分支：`feature/backend-routing`（Step 1–7 在 `feature/backend-bootstrap` 上交付）
+> 负责人：成员 1 ｜ 最后更新：2026-09-16
 
 ---
 
@@ -16,9 +16,9 @@
 | 5 | JWT 基础包 | `pkg/jwt/{jwt.go,jwt_test.go}` | Access 2h / Refresh 7d，含 `TokenType` | ✅ 已完成（已合入 develop） |
 | 6 | 配置加载 | `internal/config/{config.go,config_test.go}` | 从环境变量读到 `DB_*` / `JWT_SECRET` / `AI_SERVICE_*` | ✅ 已完成（待 PR） |
 | 7 | 中间件 ×5 | `internal/middleware/*.go` | 4 个可用；JWTAuth 空壳且带 `TODO` 标记 | ✅ 已完成（PR #23 合入 develop） |
-| 8 | 装配与路由 | `cmd/server/main.go`、`handler/router.go` | GORM 初始化 + 中间件链装配 + `RegisterXxxRoutes` 挂载点 + `/health` | 未开始 |
+| 8 | 装配与路由 | `cmd/server/main.go`、`handler/router.go`、`handler/health_handler.go` | GORM 初始化 + 中间件链装配 + `RegisterXxxRoutes` 挂载点 + `/health` | ✅ 已完成（待 PR） |
 | 9 | 环境变量模板 | `backend/.env.example` | 含 14 个变量（清单依据见 spec §3.3）；`.env` 未入库 | ✅ 已完成（随 Step 6 由 PR #20 合入） |
-| 10 | 冒烟验收 | — | spec §5 全部勾上 | 未开始 |
+| 10 | 冒烟验收 | — | spec §5 全部勾上 | 🔶 本地可验证项已过（见 §5 进度记录 2026-09-16）；`ok` 路径需 PostgreSQL 与 ai-service 就位后复验 |
 
 **优先级说明**：**Step 2 → 3 优先于其余全部**。成员 2 的 spec 把 `pkg/response` 与 `pkg/errcode` 标为「待确认」，这是当前并行度最大的阻塞点；`pkg/response` 的类型又依赖 `pkg/errcode`，所以顺序不能倒。
 
@@ -34,7 +34,7 @@
 | — | Step 4–5 | `pkg/logger` + `pkg/jwt` | ✅ 已合入 develop（未单独开 PR，随其他合并进入） |
 | #20 | Step 6 + 9 | `internal/config` + `backend/.env.example` | ✅ 已合入 develop |
 | #23 | Step 7 | 中间件 ×5 | ✅ 已合入 develop |
-| 待开 | Step 8–10 | 路由装配 + 冒烟验收 | 未开始 |
+| 待开 | Step 8–10 | 路由装配 + 冒烟验收 | 编码完成，待 push 开 PR |
 
 **2026-09-14 调整**：原表把 Step 6–7 合成一个 PR、`.env.example` 挂在 Step 8–10。现在改成 Step 6 单独一个 PR，并把 `.env.example` 并进它——理由是 `config.go` 读哪些变量和模板列哪些变量是同一件事的两面，分开写必然对不上。
 
@@ -80,7 +80,9 @@
 
 顺序 `Recovery → RequestLogger → CORS → BizErrorHandler → JWTAuth → Handler`。
 
-其中 `BizErrorHandler` 的位置最容易放错：它要在路由组上、**在业务 handler 之前**，先 `c.Next()` 再检查 `c.Errors`。放在最外层则 `c.Errors` 还没被写入。
+其中 `BizErrorHandler` 的位置最容易放错：它要在**业务 handler 之前**，先 `c.Next()` 再检查 `c.Errors`。放在最外层（`Recovery` 之外）则 `c.Errors` 还没被写入。
+
+**实际落地（2026-09-16）**：挂在 `gin.Engine` 上，紧跟 `CORS` 之后，而不是挂在 `api` 路由组上。两者效果相同（`c.Next()` 同样发生在业务 handler 之前），挂 engine 少一层嵌套、与 AGENTS §4.2 那条线性链一一对应。**注意它的能力边界**：只处理写进 `c.Errors` 的错误，未命中路由的 404 走 gin 默认响应（实测为 `text/plain` 的 `404 page not found`），不经统一响应体。
 
 ### 3.3 JWTAuth 空壳的写法要求（Step 7）
 
@@ -103,7 +105,8 @@
 | 跨域 | `gin-contrib/cors` | 技术文档 §4.5。`go get` 时会顺带升级一批间接依赖（`golang.org/x/crypto` 等），`go.mod` diff 偏大属正常 |
 | Context 键名 | `ContextKey{TraceID,UserID,Username}` | 技术文档 §4.7 定的名字。成员 2、成员 3 的 spec 已按这些名字写，**不可改名** |
 | ORM | `gorm` + `postgres` driver | 已在 `go.mod`；仅初始化连接，**不调 `AutoMigrate`**（那是成员 3 的 `model/migrate.go`） |
-| `/health` 深度 | 只报进程存活 | 本轮决定，见 spec §2.1 |
+| `/health` 深度 | **真探测**：Ping DB + 请求 ai-service `/health`，各带 2s 超时 | 原先定的是"只报进程存活"，2026-09-16 按 [API_CONTRACT §11](../API_CONTRACT.md) 改为真探测——契约优先级更高，且"只报进程存活"返回不了契约要求的 `dependencies`。依赖异常时仍回 **HTTP 200 + code 200**，状态由 `data.status` 表达，否则 Docker healthcheck 分不清"进程死了"和"依赖挂了" |
+| 启动时是否 ping DB | 否（`DisableAutomaticPing`） | 与 `cmd/migrate` 刻意相反：迁移必须连不上就失败，Web 服务不该因数据库晚起几秒而反复重启。DB 状态交给 `/health` 报告 |
 
 ### 3.5 `internal/config` 的四条设计决定（Step 6）
 
@@ -124,7 +127,8 @@
 | `codeHTTPStatus` 漏登记 → 该 4xx 的错报 HTTP 500 | `errcode_test.go` 强制三集合一致 |
 | 公共约定（响应结构 / 错误码 / 中间件顺序）冻结后被改 | 改 = 群里广播 + 更新 `API_CONTRACT.md`；这三个是本功能的核心交付物 |
 | `backend/.env.example` 两人同时改 | 我只写自己的 4 组、不留占位（spec §3.3）；动手前群里说一声 |
-| 本地没起 PostgreSQL 导致服务起不来 | `/health` 不 ping DB（本轮决定 1）；DB 连接失败的错误信息里带目标地址，便于排查 |
+| 本地没起 PostgreSQL 导致服务起不来 | 启动时不 ping DB（`DisableAutomaticPing`），服务照常起，由 `/health` 报告 `database: "down"`；DB 连接失败的错误信息里带目标地址，便于排查 |
+| **`/health` 在 ai-service 落地前恒为 `degraded`** | ai-service 属于后续 spec，本轮 `aiService` 必然探不通。这是预期行为不是 bug，验收时按 `degraded` 判定通过；等 ai-service 起来后无需改代码自动转 `ok` |
 | 契约尚未签署就开工 | 不阻塞本功能（骨架不依赖字段细节）；但**准备期末门槛**，需在群里推进 |
 
 ## 5. 进度记录
@@ -141,3 +145,6 @@
 | 2026-09-15 | Step 7 中间件 ×5 完成（`recovery` / `logger` / `cors` / `biz_error` / `jwt` 空壳），`build`/`vet` 全绿。新增依赖 `gin-contrib/cors` | 无 |
 | 2026-09-15 | TECH_DESIGN §4.4 / §4.7 的示例代码与实际实现对不上（`jwtutil` → `pkg/jwt`、补 `traceId`、补 `Written()` 判断），已同步修正并在群里广播 | 无 |
 | 2026-09-15 | Step 7 由 **PR #23 合入 develop**。`ContextKey*` 常量名按 TECH_DESIGN §4.7 对齐（原自拟的 `Ctx*` 作废） | 无 |
+| 2026-09-16 | 新分支 `feature/backend-routing`。Step 8 完成：新增 `handler/health_handler.go`、`handler/router.go`、`cmd/server/main.go`（GORM 初始化 + 中间件链 + 公开/受保护两组路由 + 优雅退出）。`build`/`vet`/`test` 全绿 | 无 |
+| 2026-09-16 | 冒烟实测：`go run ./cmd/server` 起得来，`curl /api/v1/health` 返回 HTTP 200 + `{"code":200,...,"data":{"status":"degraded","dependencies":{"aiService":"down","database":"down"}}}`。本机无 Docker/PostgreSQL，`ok` 路径未实测 | `ok` 路径待 PG 与 ai-service 就位后复验 |
+| 2026-09-16 | `/health` 从"只报进程存活"改为**按契约真探测**；`dependencies` 的异常值定为 `"down"`（契约原先只定义 `ok`），已登记进 API_CONTRACT §11 与变更记录，并在群里广播 | 无 |
