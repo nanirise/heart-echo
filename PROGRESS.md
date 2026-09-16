@@ -3,12 +3,11 @@
 最后更新：2026-09-15
 
 ## 成员1
-- 在做：分支 `feature/backend-bootstrap`（spec: `docs/specs/backend-skeleton/`；spec 里写的 `feature/backend-skeleton` 已随 PR #12 合并，实际用的是 `feature/backend-bootstrap`）。plan 10 步**完成 8 步**——`pkg/{errcode,response,logger,jwt}`、`internal/config`、`backend/.env.example` 已合入 `develop`（PR #12 / #20、#13）；Step 7 中间件 ×5 已完成，本地 `build`/`vet` 全绿，本分支待开 PR
-- 下一步：① 提交 Step 7（`backend/internal/middleware/` + `backend/go.{mod,sum}` + TECH_DESIGN §4.4/§4.7 修正）→ push → 开 PR；② 之后 Step 8 `router.go` + `cmd/server/main.go` → Step 10 冒烟验收
+- 在做：分支 `feature/backend-bootstrap`（spec: `docs/specs/backend-skeleton/`；spec 里写的 `feature/backend-skeleton` 已随 PR #12 合并，实际用的是 `feature/backend-bootstrap`）。plan 10 步**完成 8 步**——`pkg/{errcode,response,logger,jwt}`、`internal/config`、`backend/.env.example` 已合入 `develop`（PR #12 / #20、#13）；Step 7 中间件 ×5 已完成并**由 PR #23 合入 `develop`**（`feature/backend-bootstrap` 已合并）
+- 下一步：① 从最新 `develop` 切新分支；② Step 8 `handler/router.go` + `cmd/server/main.go`（GORM 初始化 + 中间件链装配 + `/health` + `RegisterXxxRoutes` 挂载点）→ Step 10 冒烟验收
 - 卡住：无
 - 改了哪些文件：
-  - 已合入 `develop`：`backend/pkg/{errcode,response,logger,jwt}/`、`backend/internal/config/`、`backend/.env.example`
-  - 本分支新增：`backend/internal/middleware/{recovery,logger,cors,biz_error,jwt}.go`；`backend/go.{mod,sum}`（新增 `gin-contrib/cors`）
+  - 已合入 `develop`：`backend/pkg/{errcode,response,logger,jwt}/`（PR #12）、`backend/internal/config/` + `backend/.env.example`（PR #20）、`backend/internal/middleware/{recovery,logger,cors,biz_error,jwt}.go` + `gin-contrib/cors` 依赖（PR #23）
   - 全局契约：`AGENTS.md` §4.3、`docs/API_CONTRACT.md` §2/§4/§5/§7/§9/§10、`docs/TECH_DESIGN.md` §4.4/§4.7（示例代码与实际实现对不上，已修正）
   - 本功能文档：`docs/specs/backend-skeleton/{spec.md,plan.md}`
 
