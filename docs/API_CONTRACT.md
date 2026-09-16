@@ -424,6 +424,18 @@ data: {"code":5001,"message":"AI 回复生成失败，请稍后重试"}
 
 供 Docker healthcheck 与部署核对使用。任一依赖异常时 `status` 为 `"degraded"`。
 
+**取值补充（2026-09-16 登记）**：
+
+| 字段 | 取值 | 说明 |
+|------|------|------|
+| `status` | `"ok"` / `"degraded"` | 两个依赖全通才对 `"ok"` |
+| `dependencies.database` | `"ok"` / `"down"` | 对 PostgreSQL 做一次 Ping（2s 超时） |
+| `dependencies.aiService` | `"ok"` / `"down"` | 请求 ai-service 的 `GET /health`（2s 超时），不带 `X-Internal-Token` |
+
+**异常时 HTTP 状态码仍是 200，业务 `code` 也是 200**——端点本身执行成功了，依赖状态由 `data` 表达。若这里改成 4xx/5xx，Docker healthcheck 与部署核对就分不清"后端进程死了"和"后端活着但依赖挂了"。
+
+> `"down"` 是本条约定的补充取值：原先只定义了健康时的 `"ok"`，未定义异常值。
+
 ---
 
 ## 12. 变更记录
@@ -442,6 +454,7 @@ data: {"code":5001,"message":"AI 回复生成失败，请稍后重试"}
 | 2026-09-10 | v1 | 修正 `codeHTTPStatus` 漏登记 `4015`；`ChatMessage` TS 类型补 `isNudge`；SSE 前端类型补 `StreamChatPayload` / `DonePayload`，签名与成员 2 文档统一 | §5 §6 | — | ⬜ |
 | 2026-09-13 | v1 | **资源越权统一按「资源不存在」返回**：废弃 `4031`（`ErrPersonaNotOwned`），访问他人 persona 一律返回 `4043`——403 会暴露该 `persona_id` 存在，而它是全局自增的，可被顺序试号探测出系统内人设总数。`4030` 收窄为**功能越权**专用 | §2 §4 §5 §7 §9 §10 | 成员 1 | ⬜ |
 | 2026-09-13 | v1 | `4030` 文案随语义收窄改写：`无权限访问该资源` → `无权限使用该功能`。原文案是**资源**越权的说法，与 `4030` 现在承担的**功能**越权语义不符，前端按文案展示会误导 | §2 | 成员 1 | ⬜ |
+| 2026-09-16 | v1 | `/health` **补全取值定义**：`status` = `"ok"` / `"degraded"`，`dependencies.database` 与 `dependencies.aiService` = `"ok"` / `"down"`（原先只定义了健康时的 `"ok"`，异常值无处可依）。同时明确**依赖异常时仍返回 HTTP 200 + 业务 code 200**，状态由 `data` 表达 | §11 | 成员 1 | ⬜ |
 | 待填 | v1 | 初始冻结 | 全部 | — | — |
 
 ---
