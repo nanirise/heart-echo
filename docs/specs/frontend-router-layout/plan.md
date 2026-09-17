@@ -15,15 +15,16 @@
 
 | # | 步骤 | 产出 | 状态 |
 |---|------|------|:----:|
-| 1 | 写 `types/router.d.ts`：扩展 `RouteMeta` | 编辑器能提示 `to.meta.title` | ⬜ |
-| 2 | 写 `router/index.ts`：路由表 + 内联占位组件 | 5 条页面路由 + 404 兜底 | ⬜ |
-| 3 | 写 `router/guards.ts`：前置守卫（登录态 + `?redirect=`） | 未登录被弹回登录页 | ⬜ |
-| 4 | 补后置守卫：`document.title` 跟随 `meta.title` | 标签页标题正确 | ⬜ |
-| 5 | 写 `layouts/MainLayout.vue`：侧边导航 + 用户名 + 退出登录 + 出口 | 页面外壳可用 | ⬜ |
-| 6 | 改 `main.ts` 注册 router；改 `App.vue` 为 `<router-view />` | 应用真的跑路由 | ⬜ |
-| 7 | 本地自查：`typecheck` / `build` / `dev` 逐条对验收 | 10 条验收全过 | ⬜ |
+| 1 | 写 `types/router.d.ts`：扩展 `RouteMeta` | 编辑器能提示 `to.meta.title` | ✅ |
+| 2 | 写 `layouts/MainLayout.vue`：侧边导航 + 用户名 + 退出登录 + 出口 | 页面外壳可用 | ✅ |
+| 3 | 写 `router/index.ts`：路由表 + 内联占位组件 | 5 条页面路由 + 404 兜底 | ✅ |
+| 4 | 写 `router/guards.ts`：前置守卫（登录态 + `?redirect=`） | 未登录被弹回登录页 | ✅ |
+| 5 | 补后置守卫：`document.title` 跟随 `meta.title` | 标签页标题正确 | ✅ |
+| 6 | 改 `main.ts` 注册 router；改 `App.vue` 为 `<router-view />` | 应用真的跑路由 | ✅ |
+| 7 | 本地自查：`typecheck` / `build` / `dev` 逐条对验收 | 10 条验收全过 | ✅ |
 
 > 为什么 1 在 2 前面：`router.d.ts` 是纯类型声明，先落它，后面写路由表与守卫时编辑器才有 `meta.title` 的提示和检查。
+> 为什么 `MainLayout.vue` 排在路由表之前：路由表要 `import('@/layouts/MainLayout.vue')`，文件不存在时 `vue-tsc` 直接报 TS2307、构建失败。**先有零件，再组装。**
 
 ---
 
@@ -159,3 +160,6 @@ location.reload()
 | 日期 | 进展 |
 |------|------|
 | 2026-09-17 | 建立 spec 与 plan；确定「占位页拆支 + 内联占位组件」方案 |
+| 2026-09-17 | 完成 `types/router.d.ts` 与 `layouts/MainLayout.vue`；步骤 2/3 顺序对调——路由表要引用布局文件，先有零件再组装 |
+| 2026-09-17 | 完成 `router/index.ts`（路由表 + 内联占位）与 `router/guards.ts`（前后置守卫）；改 `main.ts` 挂 router、`App.vue` 改为 `<router-view />` |
+| 2026-09-17 | 自查：`vue-tsc --noEmit` 与 `vite build` 均 EXIT 0；浏览器实测 10 条验收全过 |

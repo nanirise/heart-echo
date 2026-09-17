@@ -6,7 +6,7 @@
 | 项 | 值 |
 |----|-----|
 | 分支 | `feature/frontend-router-layout` |
-| 状态 | 🚧 进行中 |
+| 状态 | ✅ 代码完成，待合并 |
 | 依赖分支 | `feature/frontend-auth-request`（已合并 `4d7ff63`） |
 | 关联契约 | `docs/API_CONTRACT.md` §1（免鉴权白名单 4 个） |
 | 关联设计 | `docs/TECH_DESIGN.md` §3.3（路由管理与路由守卫） |
@@ -95,16 +95,24 @@
 
 ## 5. 验收标准
 
-- [ ] `npm run typecheck`（`vue-tsc --noEmit`）零错误
-- [ ] `npm run build` 通过
-- [ ] `npm run dev` 起得来，访问 `/` 自动重定向到 `/chat`
-- [ ] 未登录访问 `/chat` → 跳转 `/login?redirect=/chat`
-- [ ] 未登录访问不存在的路径（如 `/xxx`）→ 显示 404 页，**不被拦到登录页**
-- [ ] 已登录访问 `/login` → 自动弹回 `/chat`
-- [ ] `document.title` 随 `meta.title` 变化（如「对话 · HeartEcho」）
-- [ ] `MainLayout` 显示当前用户名（`authStore.user`），点退出登录后清空登录态并跳 `/login`
-- [ ] `/personas`、`/moments`、`/schedules` 三条路由存在且可访问（显示占位内容），成员 3 可原地替换组件
-- [ ] 本支共 6 个源文件（4 新增 + 2 修改）+ 2 个文档，**无 `views/**` 文件**
+- [x] `npm run typecheck`（`vue-tsc --noEmit`）零错误
+- [x] `npm run build` 通过
+- [x] `npm run dev` 起得来，访问 `/` 自动重定向到 `/chat`
+- [x] 未登录访问 `/chat` → 跳转 `/login?redirect=/chat`
+- [x] 未登录访问不存在的路径（如 `/xxx`）→ 显示 404 页，**不被拦到登录页**
+- [x] 已登录访问 `/login` → 自动弹回 `/chat`
+- [x] `document.title` 随 `meta.title` 变化（如「对话 · HeartEcho」）
+- [x] `MainLayout` 显示当前用户名（`authStore.user`），点退出登录后清空登录态并跳 `/login`
+- [x] `/personas`、`/moments`、`/schedules` 三条路由存在且可访问（显示占位内容），成员 3 可原地替换组件
+- [x] 本支共 6 个源文件（4 新增 + 2 修改）+ 2 个文档，**无 `views/**` 文件**
+
+**验收方式（2026-09-17）**：
+
+| 条目 | 怎么验的 |
+|------|----------|
+| 第 1、2 条 | 本机直跑 `vue-tsc --noEmit` 与 `vite build`，均 EXIT 0。构建产物中 `MainLayout` 独立成 chunk（`MainLayout-*.js` 1.06 kB），佐证懒加载确实生效 |
+| 第 10 条 | `git status --porcelain` 核对：4 新增 + 2 修改 + 文档，无多余文件 |
+| 第 3–9 条 | 浏览器实测（`npm run dev`）。后端 `/auth/login` 尚未实现，登录态按 `plan.md` §3.7 用手写 `localStorage`（key `heart-echo-auth`）模拟 |
 
 ---
 
@@ -113,3 +121,4 @@
 | 日期 | 版本 | 变更内容 | 改动人 |
 |------|------|----------|--------|
 | 2026-09-17 | v1 | 初始版本 | 成员 2 |
+| 2026-09-17 | v1.1 | 10 条验收全部通过并勾选，附验收方式；状态改为「代码完成，待合并」 | 成员 2 |
