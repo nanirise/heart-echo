@@ -17,5 +17,6 @@ func AutoMigrate(db *gorm.DB) error {
 		&UserMemory{},       // 引用 users(id) 与 personas(id)，并引用 chat_messages(id)，三张表都要先建好
 		&UserProfile{},      // 引用 users(id) 与 personas(id) ON DELETE CASCADE，两张表都要先建好
 		&ProactiveSetting{}, // 引用 users(id) 与 personas(id) ON DELETE CASCADE，两张表都要先建好
+		&AIMoment{},         // 引用 personas(id) ON DELETE CASCADE，必须在 Persona 之后
 	)
 }
