@@ -220,6 +220,13 @@ Recovery → RequestLogger → CORS → BizErrorHandler → JWTAuth → Handler
 - **学习内容统一放 `.learn/` 目录**（已在 `.gitignore` 忽略，不进仓库）。
 - 代码里的注释只留三类：① 安全/越权红线；② 非显然的 GORM tag 语义；③ 函数职责一句话。
 
+### 5.2 文档引用优先（防膨胀）
+
+- **禁止复制粘贴已有文档的内容**（DDL、契约字段、错误码表、决策记录）。
+- 需要引用时，用**地址链接 + 行号**：`见 [TECH_DESIGN §6.2](../TECH_DESIGN.md#62)` 或 `见 [API_CONTRACT §4](API_CONTRACT.md)`。
+- spec 只写**本功能独有的内容**：独有陷阱、独有决策、独有验收项。
+- 通用约定（错误码规则、越权防线、注释纪律）只写"遵守 AGENTS §x.x"，不重复描述。
+
 ## 6. Git 规范
 
 - 分支：`feature/xxx`、`fix/xxx`、`hotfix/xxx`，全小写连字符，禁止中文/空格。**禁止直接 push `main` / `develop`**，一律走 PR（至少 1 人 Approve）。
