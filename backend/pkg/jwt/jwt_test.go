@@ -8,6 +8,7 @@ package jwt
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -61,10 +62,35 @@ func TestParseRefreshToken(t *testing.T) {
 	}
 }
 
+// tamperSignature 把签名段的**首个**字符换成一个不同的字符，模拟"签名被改过"。
+//
+// 为什么不能改最后一个字符（这里原来就是那么写的，是个偶发失败的坑）：
+// HS256 签名是 32 字节，base64url 编码后 43 个字符，最后 3 个字符编码 2 字节
+// （16 位）却占 18 位，多出的 2 位是填充位，解码时被直接丢弃。
+// 也就是说末位字符只有高 4 位算数。字母表里 U(20)=010100 与 X(23)=010111
+// 高 4 位相同，于是末位恰好是 U 时（概率 1/16）把 U 改成 X，解出来的 32 字节
+// 一个比特都没变 —— 签名依然有效，篡改根本没发生，测试就失败了。
+//
+// 签名段首字符的 6 位全是有效数据，改它必然改变签名字节。
+// 换成的字符还要避开原字符：撞上了等于没改（概率 1/64），同样是偶发通过。
+func tamperSignature(t *testing.T, token string) string {
+	t.Helper()
+
+	dot := strings.LastIndex(token, ".")
+	if dot < 0 || dot+1 >= len(token) {
+		t.Fatalf("令牌不是 header.payload.signature 形式，取不到签名段: %q", token)
+	}
+
+	repl := byte('A')
+	if token[dot+1] == repl {
+		repl = 'B'
+	}
+	return token[:dot+1] + string(repl) + token[dot+2:]
+}
+
 func TestParseRejectsTamperedToken(t *testing.T) {
 	pair, _ := GenerateTokenPair(7, "alice", testSecret, 2*time.Hour, 168*time.Hour)
-	// 只改签名最后一个字符
-	tampered := pair.AccessToken[:len(pair.AccessToken)-1] + "X"
+	tampered := tamperSignature(t, pair.AccessToken)
 
 	if _, err := ParseToken(tampered, testSecret); !errors.Is(err, ErrTokenInvalid) {
 		t.Fatalf("篡改签名应返回 ErrTokenInvalid，实际 %v", err)

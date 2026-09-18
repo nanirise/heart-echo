@@ -26,7 +26,11 @@ const (
 )
 
 // 校验失败的两类原因。调用方用 errors.Is 判断，据此分发错误码：
-// 过期 → 4011（前端该拿 refresh 去换新令牌），其余一律 → 4010。
+// 过期 → 4012（前端该拿 refresh 去换新令牌，然后重放原请求），
+// 其余（签名不对、格式错）→ 4011。
+//
+// 4010「未登录」不在这两类里：那是"请求根本没带 Token"，
+// 由中间件在调用本包之前就判掉了，解析器看不到这种情况。
 var (
 	ErrTokenExpired = errors.New("jwt: token expired")
 	ErrTokenInvalid = errors.New("jwt: token invalid")
