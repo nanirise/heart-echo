@@ -1,7 +1,7 @@
 # spec · 认证与用户（auth-login）
 
 > 功能名：auth-login ｜ 分支：`feature/auth-middleware` → `feature/auth-register-login` → `feature/auth-profile`（跨多个分支交付，PR 划分见 [plan §1.1](plan.md#11-pr-划分)）
-> 负责人：成员 1 ｜ 状态：草稿（待审核）
+> 负责人：成员 1 ｜ 状态：已定稿（2026-09-18 审核通过。范围收敛为**只做 PR A**，B、C 顺延）
 > 创建：2026-09-18 ｜ 最后更新：2026-09-18
 > 关联：[接口契约 §3](../../API_CONTRACT.md) ｜ [开发总纲 §3 / §4.2](../../dev/MASTER.md) ｜ [成员 1 开发文档 §2](../../dev/MEMBER_1_BACKEND_AI.md) ｜ [技术文档 §4.7 / §4.8](../../TECH_DESIGN.md) ｜ [backend-skeleton spec §2.2](../backend-skeleton/spec.md)
 
