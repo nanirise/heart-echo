@@ -38,16 +38,26 @@ func RequestLogger(logger *zap.Logger) gin.HandlerFunc {
 		// 因为最外层的 Recovery 写 500 发生在这之后。排查时以 level=error 的
 		// "panic recovered" 日志为准，两条靠 traceId 对上号。
 		defer func() {
-			logger.Info("access",
+			fields := []zap.Field{
 				zap.String("traceId", traceID),
 				zap.String("method", c.Request.Method),
 				zap.String("path", c.Request.URL.Path),
 				zap.Int("status", c.Writer.Status()),
 				zap.Duration("latency", time.Since(start)),
-				// userId 由 JWTAuth 解析 Token 后写入。本轮 JWTAuth 是空壳，
-				// 所以这里暂时恒为空串，字段先留着。
-				zap.String("userId", c.GetString(ContextKeyUserID)),
-			)
+			}
+
+			// userId 由 JWTAuth 解析 Token 后写入，类型是 uint64。
+			// 这里曾用 GetString 取它 —— 类型不符时 gin 静默返回空串，
+			// 表现是"JWTAuth 明明生效了，日志里的 userId 却一直空着"。
+			//
+			// 免鉴权端点与鉴权失败的请求取到 0，此时整个字段不输出。
+			// 写死一个 userId=0 会让日志看起来像"用户 0 发起的请求"，
+			// 与"匿名请求"混为一谈。判据与 persona_handler.currentUserID 一致。
+			if userID := c.GetUint64(ContextKeyUserID); userID != 0 {
+				fields = append(fields, zap.Uint64("userId", userID))
+			}
+
+			logger.Info("access", fields...)
 		}()
 
 		c.Next()
