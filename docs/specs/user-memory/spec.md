@@ -45,7 +45,7 @@
 | 数据访问（写） | 同上：`CreateBatch` | **供成员 1 的记忆提取链路落库**，四个交接约定见 §4.6 |
 | 业务逻辑 | `internal/service/memory_service.go` | **先判归属、后查数据**；未命中一律 `4043`；分页钳制在此（§5.2） |
 | HTTP 接口 | `internal/handler/memory_handler.go` | `GET /memory` + `RegisterMemoryRoutes`；错误 `_ = c.Error(err)` 上抛 |
-| 路由挂载 | `router.go` 加一行 `RegisterMemoryRoutes(api, memoryHandler)` | **不要与成员 1 同时改** |
+| 路由挂载 | `router.go` 加一行 `RegisterMemoryRoutes(protected, memoryHandler)` | **不要与成员 1 同时改** |
 
 ### 2.2 不做什么（Out of Scope）
 

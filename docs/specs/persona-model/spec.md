@@ -33,7 +33,7 @@
 | 数据访问 | `internal/repository/persona_repo.go` |
 | 业务逻辑 | `internal/service/persona_service.go`（**含创建人设的事务编排**） |
 | HTTP 接口 | `internal/handler/persona_handler.go`（含 `RegisterPersonaRoutes`） |
-| 路由挂载 | `router.go` 加一行 `RegisterPersonaRoutes(api, personaHandler)`（与成员 1 错开时间改，见总纲 §4.5） |
+| 路由挂载 | `router.go` 加一行 `RegisterPersonaRoutes(protected, personaHandler)`（与成员 1 错开时间改，见总纲 §4.5） |
 
 ### 2.2 不做什么（Out of Scope）
 

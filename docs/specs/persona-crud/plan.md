@@ -37,7 +37,7 @@
 | 3b | `repository/proactive_repo.go` | `CreateDefaultSettings` 收 `tx`；四个值显式写出 | 1 | ✅ 完成 |
 | 4 | `service/persona_service.go` | 未命中一律 `4043`；创建走事务；事务后不 `Wrap`；不依赖 `*gin.Context` | 3、3b | ✅ 完成 |
 | 5 | `handler/persona_handler.go` | 薄；`currentUserID()` 一处读 userID；`_ = c.Error(errcode.New(...))`；不写 `response.Fail` | 4 | ✅ 完成 |
-| 6 | 路由挂载 | 群里通知成员 1 在 `router.go` 加一行 `RegisterPersonaRoutes(api, personaHandler)` | 5 | ⏳ 待通知（本分支只交出注册函数） |
+| 6 | 路由挂载 | 群里通知成员 1 在 `router.go` 加一行 `RegisterPersonaRoutes(protected, personaHandler)` | 5 | ⏳ 待通知（本分支只交出注册函数） |
 | 7 | **A 组验证**（spec §8） | 18 条锚定检查 + 6 组行为实验，**每条必须类都反向验证过** | 5 | ✅ 完成——读数全在 spec §8.6（含 6 次注入，**其中 1 次抓出真缺陷 `bigint`、1 次推翻一条旧结论**） |
 | 8 | **B 组验证** | 🚧 阻塞：等成员 1 的 `JWTAuth` + `cmd/server` + `router.go` | 7 + 成员 1 | 🚧 阻塞（未做） |
 | 9 | **人工审查 + PR** | spec §8 分组 C 全过；至少 1 人 Approve | 7、8 | ⏳ 等用户人工审查（**代码留在工作区未提交**） |
