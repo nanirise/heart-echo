@@ -19,5 +19,6 @@ func AutoMigrate(db *gorm.DB) error {
 		&ProactiveSetting{}, // 引用 users(id) 与 personas(id) ON DELETE CASCADE，两张表都要先建好
 		&AIMoment{},         // 引用 personas(id) ON DELETE CASCADE，必须在 Persona 之后
 		&MomentComment{},    // 引用 ai_moments(id) / personas(id) / users(id)，三张表都要先建好
+		&MomentLike{},       // 引用 users(id) 与 ai_moments(id)，两张表都要先建好
 	)
 }
