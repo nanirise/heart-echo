@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -77,6 +78,30 @@ func doRequest(t *testing.T, engine *gin.Engine, authHeader string) *httptest.Re
 	return rec
 }
 
+// tamperSignature 把签名段的首个字符换成一个不同的字符，模拟"签名被改过"。
+//
+// 不能改最后一个字符：HS256 签名 32 字节，base64url 编码 43 字符，末位字符
+// 只有高 4 位是有效数据，低 2 位是填充位、解码时被丢弃。字母表里 U(20)=010100
+// 与 X(23)=010111 高 4 位相同，末位恰好是 U 时（概率 1/16）把 U 改成 X，
+// 解出的 32 字节一比特不差，签名依然有效 —— 断言会随机失败。
+// 首字符的 6 位全是有效数据，改它必然改变签名字节；换成的字符也不能撞上原字符。
+//
+// pkg/jwt 的 jwt_test.go 里有一份同样的 helper（两个包互不引用）。
+func tamperSignature(t *testing.T, token string) string {
+	t.Helper()
+
+	dot := strings.LastIndex(token, ".")
+	if dot < 0 || dot+1 >= len(token) {
+		t.Fatalf("令牌不是 header.payload.signature 形式，取不到签名段: %q", token)
+	}
+
+	repl := byte('A')
+	if token[dot+1] == repl {
+		repl = 'B'
+	}
+	return token[:dot+1] + string(repl) + token[dot+2:]
+}
+
 // decodeFail 解析失败响应体
 func decodeFail(t *testing.T, rec *httptest.ResponseRecorder) response.Response[any] {
 	t.Helper()
@@ -92,8 +117,7 @@ func TestJWTAuthRejects(t *testing.T) {
 	valid := mustPair(t, testSecret, 2*time.Hour)
 	expired := mustPair(t, testSecret, -time.Hour)
 	otherKey := mustPair(t, "another_secret_at_least_32_chars!", 2*time.Hour)
-	// 只改签名的最后一个字符，其余原封不动
-	tampered := valid.AccessToken[:len(valid.AccessToken)-1] + "X"
+	tampered := tamperSignature(t, valid.AccessToken)
 
 	cases := []struct {
 		name   string
