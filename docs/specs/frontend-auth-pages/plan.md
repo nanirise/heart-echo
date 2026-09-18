@@ -16,11 +16,11 @@
 
 | # | 步骤 | 产物 | 状态 |
 |---|------|------|:----:|
-| 1 | 写 `spec.md` 与 `plan.md` | 2 篇文档 | 🚧 |
-| 2 | `views/auth/LoginView.vue` | 新增 | ⏳ |
-| 3 | `views/auth/RegisterView.vue` | 新增 | ⏳ |
-| 4 | 路由表换 `component`（2 行） | 改 `router/index.ts` | ⏳ |
-| 5 | 自查：`typecheck` / `build` / 浏览器逐条过 spec §5.1 | 证据 | ⏳ |
+| 1 | 写 `spec.md` 与 `plan.md` | 2 篇文档 | ✅ |
+| 2 | `views/auth/LoginView.vue` | 新增 | ✅ |
+| 3 | `views/auth/RegisterView.vue` | 新增 | ✅ |
+| 4 | 路由表换 `component`（2 行） | 改 `router/index.ts` | ✅ |
+| 5 | 自查：`typecheck` / `build` / 浏览器逐条过 spec §5.1 | 证据 | 🚧 |
 | 6 | 提交：文档一笔、代码一笔 | 2 笔 | ⏳ |
 
 **顺序理由**：视图必须先于路由改动落地——路由表引用的文件不存在时 `vue-tsc` 报 TS2307、构建直接失败（3-B 踩过同一个坑，见其 `plan.md` §3.2）。所以第 4 步一定在第 2、3 步之后。
@@ -67,7 +67,25 @@ function resolveRedirect(raw: unknown): string {
 
 比 origin 顺手把 `//evil.com`、`/\evil.com`、`https://evil.com` 三种变体一次挡掉，比手写前缀判断更难写漏。`typeof raw !== 'string'` 这一句也是必需的：`route.query.redirect` 的类型是 `string | string[] | null`，重复传参会变成数组。
 
-> 这条对应 spec §5.1 的最后两项验收。
+> 这条对应 spec §5.1 的 `resolveRedirect` 一项与 §5.2 的端到端跳转一项（spec v1.2 起拆分：本机只能验函数逻辑，真实跳转待 PR B）。
+
+**本机验证手法**（DevTools Console；首次粘贴会被浏览器拦下，先在 Console 手敲 `allow pasting` 放行）：
+
+```js
+const origin = window.location.origin
+function resolveRedirect(raw) {
+  if (typeof raw !== 'string') return '/chat'
+  const t = new URL(raw, origin)
+  if (t.origin !== origin) return '/chat'
+  return t.pathname + t.search
+}
+resolveRedirect('https://evil.com')   // /chat
+resolveRedirect('//evil.com')         // /chat
+resolveRedirect('/\\evil.com')        // /chat —— 解析器把 \ 规范化成 /，等价跨域的 //evil.com
+resolveRedirect('/chat?x=1')          // /chat?x=1
+```
+
+第 4 组是反向用例：**证明这道防线不是「一律返回 /chat」的粗暴拦截**，站内路径必须原样放行，否则守卫辛苦记下的 `?redirect=/chat` 就白费了。
 
 ### 3.2 错误处理：`unknown` 收窄 + 兜底文案
 
@@ -118,6 +136,22 @@ try {
 
 注册页和登录页结构确实像（标题 + 表单 + 提交按钮 + 错误区），但**字段数、校验规则、成功后的去向都不同**。现在抽出来只会把「两个具体的页面」变成「一个抽象组件 + 两个配置参数」，抽象边界是在只有两处用例时猜的。等**第三处**复用出现（改密码页，也在同一个卡片外壳里），边界才看得清，那时再抽。这是「先等三个，再抽象」的常规做法。
 
+### 3.8 为什么登录页只校验「非空」，不校验密码格式
+
+注册页要按契约校验用户名 3-20 位、密码 8-32 位 ASCII 可见字符；**登录页一律不做这些**，只判非空。三条理由：
+
+1. **格式规则是给「创建密码」用的，不是给「验证密码」用的。** 登录的判据只有一个：这串东西能不能对上库里的哈希。规则合不合规是后端的事，前端提前拦只会把「密码错」和「密码不合格式」这两个语义搅在一起，用户也搞不清到底该改哪个。
+2. **规则一旦收紧，老用户会被本地校验挡在门外。** 假设将来把密码下限从 8 位提到 10 位：新注册的人不受影响，但**老密码是 8 位的人连登录框都提交不出去**——他连「去改密码」的机会都没有。把格式校验只放在注册侧，这个问题根本不存在。
+3. **登录页不该泄露密码策略。** 校验提示「密码需 8-32 位 ASCII 可见字符」等于把系统的密码规则公开印在登录页上——对任何一个想猜密码的人，这是白送的信息。
+
+所以登录页的 `rules` 只留 `required`，格式一律交给后端：
+
+```
+登录失败（用户不存在 / 密码错 / 格式不合法）→ 后端回 4013 或 4001 → 前端直接展示 message
+```
+
+> 这一条对应 spec §5.1 的「登录页不做密码格式校验」那一项；spec 的 v1.1 就是为它改的。
+
 ---
 
 ## 4. 风险与对策
@@ -125,7 +159,7 @@ try {
 | 风险 | 影响 | 对策 |
 |------|------|------|
 | 后端 PR B（`/auth/{register,login}`）未交付 | 「提交成功」链路无法验证 | spec §5.2 如实留空不勾 ✅；本支只宣布 §5.1 完成 |
-| **全队无 PostgreSQL**（成员 1 无 Docker/PG，成员 2 本机亦无） | 即使 PR B 落地，仍无人能端到端验证 | 在群里挑明这是本周里程碑的头号风险；仓库已有 `deploy/docker-compose.dev.yml`，谁装 Docker 谁把库起来 |
+| **能起库的只有成员 3**（`deploy/docker-compose.dev.yml` 是他写的，`4a04f7e`；本机有 Docker Desktop。成员 1 与成员 2 本机均无 Docker/PG） | 库起在他自己电脑上，成员 1 / 成员 2 连不上 → 端到端验证缺一条通路 | 群里先定共享方案：① 用公网可连的 PostgreSQL（如 Neon 免费实例）三人共用；② 另外两人各自装 Docker 各跑各的；③ 后端统一在成员 3 机器上跑、前端连他地址。注意 `ports: "5432:5432"` 只是发布到宿主机网卡，**三人不在同一局域网时用不上** |
 | `?redirect=` 写成开放重定向 | 用户被送到钓鱼页 | §3.1 的 origin 比对 + spec §5.1 两条专项验收 |
 | 前端校验被误当成安全措施 | 后端若漏校验则成漏洞 | spec §4.2 写明正确性在后端；前端只做提前拦截 |
 | 表单值进日志 / 进 URL | 密码泄露 | 不打印表单值；提交走后端 POST body，绝不把密码放 query |
@@ -138,3 +172,7 @@ try {
 | 日期 | 步骤 | 说明 |
 |------|------|------|
 | 2026-09-18 | 1 | 写 `spec.md` + `plan.md`；分支自 `develop`（`8c15c00`）切出 |
+| 2026-09-18 | 2 | `LoginView.vue` 落地；`vue-tsc` 零错误；浏览器验过「按钮三态」与守卫写入的 `?redirect=` |
+| 2026-09-18 | 3 | `RegisterView.vue` 落地；`vue-tsc` 零错误；四条非法值均给出提示且不发请求 |
+| 2026-09-18 | 4 | `router/index.ts` 两行换成 `() => import(...)`；`npm run build` 通过，三个视图各产出独立 chunk |
+| 2026-09-18 | — | spec 升 v1.2（§5.1 分类修正），本条即该次修正的文档笔 |
