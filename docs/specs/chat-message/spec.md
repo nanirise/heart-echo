@@ -33,7 +33,7 @@
 | 归属判定 | `internal/repository/persona_repo.go` 增 `ExistsOwnedByUser`（见 §5.2，它读的是 `personas` 表） |
 | 业务逻辑 | `internal/service/chat_service.go`（归属校验 → `4043`；分页钳制） |
 | HTTP 接口 | `internal/handler/chat_handler.go`（`GET /chat/personas/:personaId/messages` + `RegisterChatRoutes`） |
-| 路由挂载 | `router.go` 加一行 `RegisterChatRoutes(api, chatHandler)`（**不要与成员 1 同时改**） |
+| 路由挂载 | `router.go` 加一行 `RegisterChatRoutes(protected, chatHandler)`（**不要与成员 1 同时改**） |
 
 ### 2.2 不做什么（Out of Scope）
 
