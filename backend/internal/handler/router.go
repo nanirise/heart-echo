@@ -8,6 +8,7 @@ import (
 
 	"github.com/nanirise/heart-echo/backend/internal/config"
 	"github.com/nanirise/heart-echo/backend/internal/middleware"
+	"github.com/nanirise/heart-echo/backend/internal/service"
 )
 
 // NewRouter 组装中间件链与全部路由，由 cmd/server 在启动时调用一次。
@@ -37,12 +38,12 @@ func NewRouter(cfg *config.Config, logger *zap.Logger, db *gorm.DB) *gin.Engine 
 	api.GET("/health", healthHandler(cfg, db))
 
 	// 业务路由一律挂 protected：它比 api 多一道 JWTAuth。
-	// ⚠️ 本轮 JWTAuth 仍是空壳（直接放行），关闭它属于 feature/auth-login。
 	protected := api.Group("")
 	protected.Use(middleware.JWTAuth(cfg.JWT.Secret))
 
-	// 新模块挂载点，形如（成员 3 写好 RegisterPersonaRoutes 并通知后加这一行）：
-	//   RegisterPersonaRoutes(protected, personaHandler)
+	// 依赖在此逐层装配：装配点全局只此一处，单测才能整体替换（plan §3.1）。
+	personaService := service.NewPersonaService(db)
+	RegisterPersonaRoutes(protected, NewPersonaHandler(personaService))
 
 	return r
 }
