@@ -1,14 +1,21 @@
 # PROGRESS
 
-最后更新：2026-09-16
+最后更新：2026-09-18
 
 ## 成员1
-- 在做：分支 `feature/backend-routing`（spec: `docs/specs/backend-skeleton/`）。plan 10 步**完成 9 步**——`pkg/{errcode,response,logger,jwt}`、`internal/config`、`backend/.env.example`（PR #12 / #20、#13）、中间件 ×5（PR #23）均已合入 `develop`；**Step 8 装配与路由编码完成**：`handler/router.go`（中间件链 + 免鉴权/受保护两组路由 + `RegisterXxxRoutes` 挂载点）、`handler/health_handler.go`（`/health` 真探测 DB 与 ai-service）、`cmd/server/main.go`（GORM 初始化 + 优雅退出）。`build`/`vet`/`test` 全绿
-- 下一步：① commit + push → 开 PR（Step 8–10）；② 群里广播「路由挂载方式」（文案已备，见下「接口/数据结构变更」），发完把 `docs/API_CONTRACT.md` §12 的「已广播」勾上；③ 合并后开 `feature/auth-login`——**JWTAuth 空壳必须在这一轮关掉**，否则 `protected` 组形同虚设
-- 卡住：无。★ 待复验：本机没有 Docker/PostgreSQL，`/health` 只实测了 `degraded` 路径（`{"status":"degraded","dependencies":{"aiService":"down","database":"down"}}`）；`ok` 路径要等 PG 与 ai-service 就位后补测
+- 在做：**PR A 已合并**——`feature/auth-middleware` → `develop`，**PR #34**（`d0f4f26`）。内容是 auth-login 的 **PR A = Step 1「关闭 JWTAuth 空壳」**（spec: `docs/specs/auth-login/`）：`middleware.JWTAuth` 从 `c.Next()` 放行改为真实校验——没带 `Authorization` 头、或前缀不是 `Bearer` 加一个空格 → `4010`、access token 过期 → `4012`、签名不对 / 格式错 / **拿 refresh token 当 access 用** → `4011`；通过后把 `userId` / `username` 写进 Context。单测 10 条子用例（8 条拒绝 + 2 条放行）全绿，`build`/`vet`/`test` 全绿。**`protected` 组从此真的拦人**
+- 下一步：① **提交交接文档的 PR**（`PROGRESS.md` + `docs/specs/auth-login/plan.md` 的改动目前只在本地，`develop` 禁止直接 push，需走分支 + PR）；② **补发 2026-09-16 就该发的路由挂载群广播**（至今未发，见下「接口/数据结构变更」两条 ★待广播），连同 JWTAuth 实装一条发；③ 从 `develop` 切 `feature/auth-register-login` 做 PR B（register / login / refresh 的 dto + repo + service + handler + 挂载）
+- ★ **遗留待补（2026-09-18 已知未做，下次改）**：
+  1. `backend/internal/handler/router.go` 第 40 行的注释还写着「本轮 JWTAuth 仍是空壳（直接放行）」——**已失效**，PR A 之后它不是空壳了
+  2. `docs/specs/auth-login/spec.md` 未收尾：§5.1 的 8 个验收勾、§6 变更记录加一行、§7 待确认第 2 条（广播）办完可删、头部状态行补「PR A 已合并」
+  3. `docs/API_CONTRACT.md` §12 的「已广播」列**仍全为 ⬜**——广播发完才勾
+  4. `docs/API_CONTRACT.md` §13 三方冻结签署仍空白
+- 卡住：**本机无 Docker / PostgreSQL**，auth 的 6 个端点拿不到端到端验证手段（`docs/specs/auth-login/spec.md` §3.3 已记录并接受该约束）。PR B 只能带单测提上去，PR 描述里必须写明「未做端到端验证」
 - 改了哪些文件：
-  - 已合入 `develop`：`backend/pkg/{errcode,response,logger,jwt}/`（PR #12）、`backend/internal/config/` + `backend/.env.example`（PR #20）、`backend/internal/middleware/{recovery,logger,cors,biz_error,jwt}.go` + `gin-contrib/cors` 依赖（PR #23）
-  - 本分支新增：`backend/internal/handler/{router.go,health_handler.go}`、`backend/cmd/server/main.go`
+  - 已合入 `develop`：`backend/pkg/{errcode,response,logger,jwt}/`（PR #12）、`backend/internal/config/` + `backend/.env.example`（PR #20）、`backend/internal/middleware/{recovery,logger,cors,biz_error,jwt}.go` + `gin-contrib/cors` 依赖（PR #23）；`backend/internal/handler/{router.go,health_handler.go}`、`backend/cmd/server/main.go`（Step 8–10）
+  - PR A 新增（PR #34）：`docs/specs/auth-login/{spec.md,plan.md}`、`backend/internal/middleware/jwt_test.go`
+  - PR A 修改（PR #34）：`backend/internal/middleware/jwt.go`（空壳 → 真实实现）、`backend/internal/middleware/logger.go`（access log 的 `userId` 由 `GetString` 改 `GetUint64`——类型不符时 gin 静默取到空串，表现是「鉴权生效了但日志里 userId 一直是空的」）、`backend/pkg/jwt/jwt_test.go` + `backend/pkg/jwt/jwt.go`（修偶发失败与注释，见下「接口/数据结构变更」）
+  - 待提交（本地未推）：`PROGRESS.md`、`docs/specs/auth-login/plan.md`
   - 全局契约与总纲：`AGENTS.md` §4.3、`docs/dev/MASTER.md` §4.5（路由示例拆成 `api` / `protected` 双组）、`docs/API_CONTRACT.md` §2/§4/§5/§7/§9/§10/§11、`docs/TECH_DESIGN.md` §4.4/§4.7（示例代码与实际实现对不上，已修正）
   - 任务书：`docs/dev/MEMBER_1_BACKEND_AI.md` §1（准备期清单 9 项按实际进度重标）
   - 本功能文档：`docs/specs/backend-skeleton/{spec.md,plan.md}`、`.learn/2026-09-16-router-assembly.md`（本地未追踪）
@@ -70,6 +77,24 @@
   - 改了什么：`GET /health` 补全取值定义——`status` = `"ok"` / `"degraded"`，`dependencies.database` 与 `dependencies.aiService` = `"ok"` / `"down"`（原先只定义了 `"ok"`）。并明确**依赖异常时仍返回 HTTP 200 + 业务 code 200**
   - 涉及文件：`docs/API_CONTRACT.md` §11/§12、`backend/internal/handler/health_handler.go`
   - 其他人要做什么：**成员 3** 若在 compose 里按「非 200 即不健康」写 healthcheck，注意依赖挂了它照样回 200，要判 `data.status == "degraded"`
+- 有（2026-09-18 新增，**不是 HTTP 契约变更**，但**成员 3 必须知道**——`protected` 组从 PR A 合并起真的拦人了）：
+  - 改了什么：`middleware.JWTAuth` 从空壳改为真实校验（`feature/auth-middleware`，auth-login 的 PR A）。行为变化：
+    - `protected` 组下的路由**必须带 `Authorization: Bearer <access token>`**：没带 → `4010`；access token 过期 → `4012`；签名不对 / 格式错 / 拿 refresh token 当 access 用 → `4011`
+    - `c.GetUint64(middleware.ContextKeyUserID)` **从合并起真的等于签发时的 userID**——此前空壳不写 Context，取到的一律是 `0`。谁按它做归属校验，此前的防线是空的，现在才真正生效
+    - `c.GetString(middleware.ContextKeyUsername)` 同理
+    - 中间件失败时只做 `c.Error()` + `c.Abort()`，响应仍由 `BizErrorHandler` 出口，**没有新增任何错误码**
+  - ⚠️ **契约本身没变**：`API_CONTRACT.md` §1 早就写了「其余端点一律需要 Token，缺失或过期返回 `4010`」，这次是实现在补上，所以 §12 **不新增行**
+  - 涉及文件：`backend/internal/middleware/{jwt.go,jwt_test.go,logger.go}`、`backend/pkg/jwt/{jwt_test.go,jwt.go}`
+  - 其他人要做什么：
+    - **成员 3**：`router.go` 的 `protected` 组下**目前一条路由都还没有**（我只留了挂载点注释）。你的 `RegisterPersonaRoutes` 已在 `persona_handler.go` 第 26 行，但那一行挂载还没加——等你确认后我加（MASTER §4.5：这个文件不要两人同时改）
+    - **成员 2**：`request.ts` 的 `4012` → 刷新重放分支、`4010` / `4011` → 登出分支，合并后会真的被触发
+  - ★ **待广播**：本条要连同下面 2026-09-16 那条「路由挂载方式」一起发——**两条至今都是 ⬜**，`docs/API_CONTRACT.md` §12 的「已广播」列全空
+- 有（2026-09-18 新增，**测试修复，不是接口变更**，但 CI 会红所以记一笔）：
+  - 改了什么：`pkg/jwt/jwt_test.go` 的 `TestParseRejectsTamperedToken` 原先靠改签名的**最后一个字符**来模拟篡改，这个写法是错的。HS256 签名 32 字节 → base64url 编码 43 字符，末位字符只有**高 4 位**是有效数据，低 2 位是填充位、解码时被丢弃；字母表里 `U`(20)=`010100` 与 `X`(23)=`010111` 高 4 位相同，所以末位恰好是 `U` 时（概率 **1/16**）把 `U` 改成 `X`，解出的 32 字节一个比特都没变——签名依然有效，篡改根本没发生，测试就红了
+  - 这就是 CI 上 `Backend (push)` 红、`Backend (pull_request)` 绿的原因：**两份跑的是同一份代码**，只是签令牌落在了不同的秒。不是环境问题
+  - 改为改签名段的**首字符**（6 位全是有效数据，改它必然改变签名字节），并对原字符做避让（撞上原字符等于没改，概率 1/64）。20 万个真随机签名对照实验：旧写法 12451 次篡改无效（6.23%），新写法 0 次
+  - 涉及文件：`backend/pkg/jwt/jwt_test.go`、`backend/internal/middleware/jwt_test.go`、`backend/pkg/jwt/jwt.go`（注释里「过期 → 4011、其余一律 → 4010」订正为 4012 / 4011，与契约 §2 对齐）
+  - 其他人要做什么：无。但**写测试时注意**：base64 / JWT 这类「改末位字符」的篡改手法都可能因填充位而失效，改中间的字符更可靠
 
 ## 待确认
 - 错误码规则已于 2026-09-13 定为：**资源越权 → `4043`**、**功能越权 → `4030`**、**`4031` 废弃**。两处文档均已同步：
