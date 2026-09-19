@@ -9,7 +9,7 @@
 
 | # | 步骤 | 产物 | 完成标准 | 状态 |
 |---|---|---|---|---|
-| 1 | **关闭 JWTAuth 空壳** | `internal/middleware/jwt.go`、`jwt_test.go` | spec §5.1 全部 8 条勾上；`go test ./internal/middleware/` 通过 | ⬜ 未开始 |
+| 1 | **关闭 JWTAuth 空壳** | `internal/middleware/jwt.go`、`jwt_test.go` | spec §5.1 全部 8 条勾上；`go test ./internal/middleware/` 通过 | ✅ 已完成（PR A，PR #34 已合并） |
 | 2 | 请求 / 响应 DTO | `internal/dto/auth_dto.go` | 5 个结构体的 binding tag 与契约 §3 的校验规则逐条对应，表驱动单测通过 | ⬜ 未开始 |
 | 3 | 用户仓储 | `internal/repository/user_repo.go` | 6 个方法：`Create` / `FindByUsername` / `FindByEmail` / `FindByID` / `UpdateProfile` / `UpdatePassword` | ⬜ 未开始 |
 | 4 | 认证业务逻辑 | `internal/service/auth_service.go` | `Register` / `Login` / `Refresh` / `GetProfile` / `UpdateProfile` / `ChangePassword`；bcrypt；令牌签发 | ⬜ 未开始 |
@@ -25,8 +25,8 @@
 
 | PR | 分支 | 步骤 | 内容 | 状态 |
 |---|---|---|---|---|
-| **A** | `feature/auth-middleware` | spec + Step 1 | 本 spec/plan + JWTAuth 实装 + 单测 | ⬜ 今日目标 |
-| **B** | `feature/auth-register-login` | Step 2–4、6（部分） | register / login / refresh 三个端点的 dto + repo + service + handler + 挂载 | ⬜ 今日目标（缺端到端验证） |
+| **A** | `feature/auth-middleware` | spec + Step 1 | 本 spec/plan + JWTAuth 实装 + 单测 | ✅ **已合并（PR #34）** |
+| **B** | `feature/auth-register-login` | Step 2–4、6（部分） | register / login / refresh 三个端点的 dto + repo + service + handler + 挂载 | ⬜ 待开始（等 A 合并后从 `develop` 切出） |
 | **C** | `feature/auth-profile` | Step 5、6（其余） | `GET`/`PUT /user/profile`、`PUT /user/password` | ⬜ 待 B 合并后 |
 
 **切分判据**：一个 PR = 一件**能独立验证、能单独 review** 的事。
@@ -119,3 +119,6 @@ type UpdateProfileReq struct {
 | 日期 | 进展 | 阻塞 |
 |---|---|---|
 | 2026-09-18 | spec / plan 起草，等待审核 | 本机无 Docker / PostgreSQL，端点 1–6 无端到端验证手段 |
+| 2026-09-18 | 审核通过，范围收敛为**只做 PR A**；Step 1 完成——`JWTAuth` 实装，单测 10 条子用例（8 拒绝 + 2 放行）全绿 | 同上 |
+| 2026-09-18 | 顺带修复 `pkg/jwt/jwt_test.go` 的偶发失败测试（base64url 末位填充位导致篡改无效，1/16 概率），CI 恢复绿 | 同上 |
+| 2026-09-18 | 已知未做：**路由挂载方式的群广播**（`API_CONTRACT.md` §12「已广播」列仍全空）、**契约 §13 三方冻结签署**仍空白 | 两条都需要三人到场 |
