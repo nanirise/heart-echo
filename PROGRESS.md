@@ -1,21 +1,26 @@
 # PROGRESS
 
-最后更新：2026-09-18
+最后更新：2026-09-19
 
 ## 成员1
-- 在做：**PR A 已合并**——`feature/auth-middleware` → `develop`，**PR #34**（`d0f4f26`）。内容是 auth-login 的 **PR A = Step 1「关闭 JWTAuth 空壳」**（spec: `docs/specs/auth-login/`）：`middleware.JWTAuth` 从 `c.Next()` 放行改为真实校验——没带 `Authorization` 头、或前缀不是 `Bearer` 加一个空格 → `4010`、access token 过期 → `4012`、签名不对 / 格式错 / **拿 refresh token 当 access 用** → `4011`；通过后把 `userId` / `username` 写进 Context。单测 10 条子用例（8 条拒绝 + 2 条放行）全绿，`build`/`vet`/`test` 全绿。**`protected` 组从此真的拦人**
-- 下一步：① **提交交接文档的 PR**（`PROGRESS.md` + `docs/specs/auth-login/plan.md` 的改动目前只在本地，`develop` 禁止直接 push，需走分支 + PR）；② **补发 2026-09-16 就该发的路由挂载群广播**（至今未发，见下「接口/数据结构变更」两条 ★待广播），连同 JWTAuth 实装一条发；③ 从 `develop` 切 `feature/auth-register-login` 做 PR B（register / login / refresh 的 dto + repo + service + handler + 挂载）
-- ★ **遗留待补（2026-09-18 已知未做，下次改）**：
-  1. `backend/internal/handler/router.go` 第 40 行的注释还写着「本轮 JWTAuth 仍是空壳（直接放行）」——**已失效**，PR A 之后它不是空壳了
-  2. `docs/specs/auth-login/spec.md` 未收尾：§5.1 的 8 个验收勾、§6 变更记录加一行、§7 待确认第 2 条（广播）办完可删、头部状态行补「PR A 已合并」
-  3. `docs/API_CONTRACT.md` §12 的「已广播」列**仍全为 ⬜**——广播发完才勾
-  4. `docs/API_CONTRACT.md` §13 三方冻结签署仍空白
-- 卡住：**本机无 Docker / PostgreSQL**，auth 的 6 个端点拿不到端到端验证手段（`docs/specs/auth-login/spec.md` §3.3 已记录并接受该约束）。PR B 只能带单测提上去，PR 描述里必须写明「未做端到端验证」
+- 在做：**persona 路由挂载已推、待开 PR**——分支 `feature/backend-persona-routes`（3 个 commit，相对 `develop` 改 4 个文件 +300/−12）：`router.go` 把成员 3 的 4 条 persona 路由装配到 `protected` 组（此前一条都访问不到，`GET /api/v1/personas` 返回 404），加 `router_test.go`（259 行，4 个测试 / 11 条子用例）与交接文档。**代码已 push，只差在 GitHub 网页开 PR**（本机没装 `gh`）
+  **auth 的 PR B / PR C 一行代码都还没写**——`internal/{dto/auth_dto.go,repository/user_repo.go,service/auth_service.go,handler/auth_handler.go}` 四个文件均不存在
+- 下一步：① 开上面那个 PR（base `develop` ← `feature/backend-persona-routes`）；② 从 `develop` 切 `feature/auth-register-login` 开工 **PR B**，按 [auth-login plan §1](docs/specs/auth-login/plan.md) 的 Step 2 dto → 3 repo → 4 service → 5 handler → 6 挂载，**顺序不可颠倒**（类型从内向外依赖，先写外层会反复返工）；③ PR C（`GET`/`PUT /user/profile`、`PUT /user/password`）。估时：PR B 1 天、PR C 半天（AI 辅助下的容量，参照 PR A 一天完成的实测）
+- ★ **遗留待补（2026-09-19 已知未做，下次改）**：
+  1. `docs/specs/auth-login/spec.md` 未收尾：§5.1 的 8 个验收勾、§6 变更记录加一行、§7 待确认第 2 条（广播）、头部状态行补「PR A 已合并」
+  2. `docs/API_CONTRACT.md` §12 的「已广播」列**仍全为 ⬜**、§13 三方冻结签署仍空白。**队长 2026-09-19 判定这两条「算通过」，文档尚未同步**——不改的话以后没人说得清
+  3. `deploy/.env.example` 缺失；`backend/.env.example` 里 `MOMENT_JOB_INTERVAL` / `PROACTIVE_JOB_INTERVAL` 只有一行占位注释、变量本身没有（MASTER §3 #4b，成员 3 的活）
+  4. `ai-service/` 目录**不存在**，`SCHEDULE_PARSE_BACKEND` 无从落地（MASTER §3 #4c）
+  5. **本文件下面的成员 2 / 成员 3 段落已过期**：成员 2 写「在做前端数据契约层」但那是早已合并的 PR #21；成员 3 整段空白，而他实际交付了 8 个 model PR + persona CRUD 后端。这份表现在不能当排期依据（他们的段落不归我改）
+  6. ~~`router.go` 第 40 行「本轮 JWTAuth 仍是空壳」的失效注释~~ —— **本次 PR 已修**
+  7. **新发现（本 PR 不修）**：`gin-contrib/cors` 收到**空的 origin 列表会直接 panic**（`all origins disabled`）。生产靠 `internal/config` 里 `CORS_ALLOW_ORIGINS` 的 `envDefault` 兜着，但谁在 `.env` 里显式写一行 `CORS_ALLOW_ORIGINS=`（空串），服务会在**启动时 panic**，而不是报一条配置错误
+- 卡住：**本机无 Docker / PostgreSQL**，auth 的 6 个端点拿不到端到端验证手段（`docs/specs/auth-login/spec.md` §3.3 已记录并接受该约束）。PR B 只能带单测提上去，PR 描述里必须写明「未做端到端验证」。**Week 1 里程碑里「与成员 2 前后端联调成功」这一条，在装 Docker 之前达不成**——不是工时问题
 - 改了哪些文件：
   - 已合入 `develop`：`backend/pkg/{errcode,response,logger,jwt}/`（PR #12）、`backend/internal/config/` + `backend/.env.example`（PR #20）、`backend/internal/middleware/{recovery,logger,cors,biz_error,jwt}.go` + `gin-contrib/cors` 依赖（PR #23）；`backend/internal/handler/{router.go,health_handler.go}`、`backend/cmd/server/main.go`（Step 8–10）
   - PR A 新增（PR #34）：`docs/specs/auth-login/{spec.md,plan.md}`、`backend/internal/middleware/jwt_test.go`
   - PR A 修改（PR #34）：`backend/internal/middleware/jwt.go`（空壳 → 真实实现）、`backend/internal/middleware/logger.go`（access log 的 `userId` 由 `GetString` 改 `GetUint64`——类型不符时 gin 静默取到空串，表现是「鉴权生效了但日志里 userId 一直是空的」）、`backend/pkg/jwt/jwt_test.go` + `backend/pkg/jwt/jwt.go`（修偶发失败与注释，见下「接口/数据结构变更」）
-  - 待提交（本地未推）：`PROGRESS.md`、`docs/specs/auth-login/plan.md`
+  - persona 路由 PR 新增（`feature/backend-persona-routes`）：`backend/internal/handler/router_test.go`（259 行）
+  - persona 路由 PR 修改（`feature/backend-persona-routes`）：`backend/internal/handler/router.go`（装配 4 条 persona 路由 + 删掉失效的空壳注释）、`PROGRESS.md`、`docs/specs/auth-login/plan.md`
   - 全局契约与总纲：`AGENTS.md` §4.3、`docs/dev/MASTER.md` §4.5（路由示例拆成 `api` / `protected` 双组）、`docs/API_CONTRACT.md` §2/§4/§5/§7/§9/§10/§11、`docs/TECH_DESIGN.md` §4.4/§4.7（示例代码与实际实现对不上，已修正）
   - 任务书：`docs/dev/MEMBER_1_BACKEND_AI.md` §1（准备期清单 9 项按实际进度重标）
   - 本功能文档：`docs/specs/backend-skeleton/{spec.md,plan.md}`、`.learn/2026-09-16-router-assembly.md`（本地未追踪）
