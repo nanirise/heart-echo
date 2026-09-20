@@ -355,9 +355,9 @@ data: {"code":5001,"message":"AI 回复生成失败，请稍后重试"}
 
 | 端点 | 请求 | 响应 data | 错误码 |
 |------|------|-----------|--------|
-| `GET /proactive/settings` ⬜ | `personaId` | `Settings` | 4043 |
+| `GET /proactive/settings` ⬜ | `personaId` | `Settings` | 4001 4043 |
 | `PUT /proactive/settings` ⬜ | `personaId` + 可改字段 | `Settings` | 4001 4043 |
-| `POST /proactive/trigger` 🚨 ⬜ | `{personaId}` | `{messageId, content, createdAt}` | 4043 5001 |
+| `POST /proactive/trigger` 🚨 ⬜ | `{personaId}` | `{messageId, content, createdAt}` | 4001 4043 5001 |
 
 **可改字段与约束**（前端三个控件，都要给）
 
@@ -368,6 +368,7 @@ data: {"code":5001,"message":"AI 回复生成失败，请稍后重试"}
 | intervalMax | 5-1440，且 > intervalMin | 数字输入 |
 | dailyLimit | 1-10 | 数字输入 |
 
+> **`personaId` 是必传的**：主动消息配置跟记忆、日程一样是「一人设一份」，不带 `personaId` 无法确定查谁的配置。缺失返回 `4001`——它必须在参数层就被拦下，此时还没有任何归属可供校验。
 > `lastNudgeAt` **只读**，`PUT` 时忽略。
 > 🚨 `/proactive/trigger` **复用与定时任务完全相同的业务逻辑**，是答辩演示的硬性依赖，不是调试后门。朋友圈则没有对应的手动接口（见 §8）；日程提醒**有**（见 §10）。
 
@@ -455,6 +456,7 @@ data: {"code":5001,"message":"AI 回复生成失败，请稍后重试"}
 | 2026-09-13 | v1 | **资源越权统一按「资源不存在」返回**：废弃 `4031`（`ErrPersonaNotOwned`），访问他人 persona 一律返回 `4043`——403 会暴露该 `persona_id` 存在，而它是全局自增的，可被顺序试号探测出系统内人设总数。`4030` 收窄为**功能越权**专用 | §2 §4 §5 §7 §9 §10 | 成员 1 | ⬜ |
 | 2026-09-13 | v1 | `4030` 文案随语义收窄改写：`无权限访问该资源` → `无权限使用该功能`。原文案是**资源**越权的说法，与 `4030` 现在承担的**功能**越权语义不符，前端按文案展示会误导 | §2 | 成员 1 | ⬜ |
 | 2026-09-16 | v1 | `/health` **补全取值定义**：`status` = `"ok"` / `"degraded"`，`dependencies.database` 与 `dependencies.aiService` = `"ok"` / `"down"`（原先只定义了健康时的 `"ok"`，异常值无处可依）。同时明确**依赖异常时仍返回 HTTP 200 + 业务 code 200**，状态由 `data` 表达 | §11 | 成员 1 | ⬜ |
+| 2026-09-20 | v1 | `GET /proactive/settings` 与 `POST /proactive/trigger` 补错误码 `4001`：两者的 `personaId` 都是**必传**参数，缺失时没有归属可校验，须在参数层拦下。原表分别只写 `4043` / `4043 5001`，实现者照此写会漏掉缺参分支；同时在 §9 补上与 §10 对称的「`personaId` 必传」说明 | §9 | 成员 1 | ⬜ |
 | 待填 | v1 | 初始冻结 | 全部 | — | — |
 
 ---
