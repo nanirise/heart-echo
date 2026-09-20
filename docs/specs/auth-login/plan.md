@@ -10,11 +10,11 @@
 | # | 步骤 | 产物 | 完成标准 | 状态 |
 |---|---|---|---|---|
 | 1 | **关闭 JWTAuth 空壳** | `internal/middleware/jwt.go`、`jwt_test.go` | spec §5.1 全部 8 条勾上；`go test ./internal/middleware/` 通过 | ✅ 已完成（PR A，PR #34 已合并） |
-| 2 | 请求 / 响应 DTO | `internal/dto/auth_dto.go` | 5 个结构体的 binding tag 与契约 §3 的校验规则逐条对应，表驱动单测通过 | ⬜ 未开始 |
-| 3 | 用户仓储 | `internal/repository/user_repo.go` | 6 个方法：`Create` / `FindByUsername` / `FindByEmail` / `FindByID` / `UpdateProfile` / `UpdatePassword` | ⬜ 未开始 |
-| 4 | 认证业务逻辑 | `internal/service/auth_service.go` | `Register` / `Login` / `Refresh` / `GetProfile` / `UpdateProfile` / `ChangePassword`；bcrypt；令牌签发 | ⬜ 未开始 |
-| 5 | HTTP 层 | `internal/handler/auth_handler.go` | 6 个 handler，薄到只做"绑定 → 调 service → 写响应" | ⬜ 未开始 |
-| 6 | 路由挂载 | `internal/handler/router.go` | 前 3 个挂 `api` 组，后 3 个挂 `protected` 组 | ⬜ 未开始 |
+| 2 | 请求 / 响应 DTO | `internal/dto/auth_dto.go` | 5 个结构体的 binding tag 与契约 §3 的校验规则逐条对应，表驱动单测通过 | ✅ 已完成（PR B） |
+| 3 | 用户仓储 | `internal/repository/user_repo.go` | 6 个方法：`Create` / `FindByUsername` / `FindByEmail` / `FindByID` / `UpdateProfile` / `UpdatePassword` | 🔶 4/6（PR B：前 4 个。`UpdateProfile` / `UpdatePassword` 留 PR C） |
+| 4 | 认证业务逻辑 | `internal/service/auth_service.go` | `Register` / `Login` / `Refresh` / `GetProfile` / `UpdateProfile` / `ChangePassword`；bcrypt；令牌签发 | 🔶 3/6（PR B：前 3 个 + bcrypt + 令牌签发。profile / 改密三件套留 PR C） |
+| 5 | HTTP 层 | `internal/handler/auth_handler.go` | 6 个 handler，薄到只做"绑定 → 调 service → 写响应" | 🔶 3/6（PR B：前 3 个。`RegisterUserRoutes` 留 PR C） |
+| 6 | 路由挂载 | `internal/handler/router.go` | 前 3 个挂 `api` 组，后 3 个挂 `protected` 组 | 🔶 前 3 个已挂 `api`（PR B）；后 3 个挂 `protected` 留 PR C |
 | 7 | 冒烟验收 | — | spec §5 全部勾上（**§5.2 依赖 PostgreSQL，本机无法完成**） | ⬜ 未开始 |
 
 **顺序不可颠倒**：Step 2 → 3 → 4 → 5 是"类型从内向外逐层依赖"（handler 的入参类型来自 dto、service 的返回来自 repo），先写外层会反复返工。Step 1 独立，可以先做——它不碰 dto / repo / service 任何一个。
@@ -26,7 +26,7 @@
 | PR | 分支 | 步骤 | 内容 | 状态 |
 |---|---|---|---|---|
 | **A** | `feature/auth-middleware` | spec + Step 1 | 本 spec/plan + JWTAuth 实装 + 单测 | ✅ **已合并（PR #34）** |
-| **B** | `feature/auth-register-login` | Step 2–4、6（部分） | register / login / refresh 三个端点的 dto + repo + service + handler + 挂载 | ⬜ 待开始（等 A 合并后从 `develop` 切出） |
+| **B** | `feature/auth-register-login` | Step 2–4、6（部分） | register / login / refresh 三个端点的 dto + repo + service + handler + 挂载 | 🔶 代码完成、`go test ./...` 全绿、反向注入验证过；**未做端到端验证**（本机无 PG）。待开 PR |
 | **C** | `feature/auth-profile` | Step 5、6（其余） | `GET`/`PUT /user/profile`、`PUT /user/password` | ⬜ 待 B 合并后 |
 
 **切分判据**：一个 PR = 一件**能独立验证、能单独 review** 的事。
@@ -122,3 +122,5 @@ type UpdateProfileReq struct {
 | 2026-09-18 | 审核通过，范围收敛为**只做 PR A**；Step 1 完成——`JWTAuth` 实装，单测 10 条子用例（8 拒绝 + 2 放行）全绿 | 同上 |
 | 2026-09-18 | 顺带修复 `pkg/jwt/jwt_test.go` 的偶发失败测试（base64url 末位填充位导致篡改无效，1/16 概率），CI 恢复绿 | 同上 |
 | 2026-09-18 | 已知未做：**路由挂载方式的群广播**（`API_CONTRACT.md` §12「已广播」列仍全空）、**契约 §13 三方冻结签署**仍空白 | 两条都需要三人到场 |
+| 2026-09-20 | **PR B 代码完成**：Step 2 dto（+ 30 条子用例）、Step 3 repo 4 个方法、Step 4 service 3 个方法、Step 5 前 3 个 handler、Step 6 挂到 `api` 组。`go build` / `go vet` / `go test ./...` 全绿；新测试全部做过反向注入（削弱 tag、把路由挂到 `protected` 上），确认拦得住 | **端点仍无法端到端验证**（本机无 Docker / PostgreSQL），PR 描述已如实标注 |
+| 2026-09-20 | 与决策 ③「repo 只做 3 个方法」的偏差：决策 ①（refresh 要回查库）需要 `FindByID`，实际 4 个。偏差已并入 PR B，PR C 的 repo 剩 2 个方法 | — |
