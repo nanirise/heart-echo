@@ -230,6 +230,57 @@ func TestValidTokenPassesJWTAuth(t *testing.T) {
 	}
 }
 
+// TestAuthRoutesAreNotBehindJWTAuth 确认白名单里的三个 auth 端点没被误加鉴权。
+//
+// 判据同样是"不是 4010 / 4011 / 4012"，而不是"注册成功"：本机没有 PostgreSQL，
+// 越过路由后必然停在 DB 那一步（5003），刷新那枚假令牌则在验签处停下（4014）。
+// 这条断言的价值在于反面 —— 把 RegisterAuthRoutes 挂到 protected 上，
+// 登录接口会返回 4010，而这台机器上只有这里能发现。
+//
+// 404 单独判：路由没挂上时 gin 走默认响应，不经过 BizErrorHandler，
+// 解不出统一结构，只会报一句看不懂的解码失败。
+func TestAuthRoutesAreNotBehindJWTAuth(t *testing.T) {
+	r := newTestRouter(t)
+
+	cases := []struct {
+		name string
+		path string
+		body string
+	}{
+		{"注册", "/api/v1/auth/register", `{"username":"xiaoming","email":"xm@example.com","password":"Passw0rd!"}`},
+		{"登录", "/api/v1/auth/login", `{"username":"xiaoming","password":"Passw0rd!"}`},
+		{"刷新", "/api/v1/auth/refresh", `{"refreshToken":"eyJhbGciOiJIUzI1NiJ9.x.y"}`},
+	}
+
+	// 这三个码只有 JWTAuth 会产生：handler 拿不到 userID 时返的是 4010，
+	// 但 auth_handler 根本不读 userID，所以在这里出现就是中间件拦的。
+	authCodes := map[errcode.ErrorCode]bool{
+		errcode.ErrUnauthorized: true,
+		errcode.ErrTokenInvalid: true,
+		errcode.ErrTokenExpired: true,
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			r.ServeHTTP(rec, req)
+
+			if rec.Code == http.StatusNotFound {
+				t.Fatalf("路由没挂上: POST %s 返回 404", tc.path)
+			}
+			body := decodeBody(t, rec)
+			if authCodes[errcode.ErrorCode(body.Code)] {
+				t.Fatalf(
+					"白名单端点被鉴权拦下 (code=%d, HTTP %d) —— RegisterAuthRoutes 挂到了 protected 上，响应体 %q",
+					body.Code, rec.Code, rec.Body.String(),
+				)
+			}
+		})
+	}
+}
+
 // TestHealthIsNotBehindJWTAuth 确认白名单没被误伤。
 //
 // 依赖连不上是预期内的（测试里没有 PostgreSQL、没有 ai-service），所以这里不断言

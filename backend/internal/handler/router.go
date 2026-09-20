@@ -33,9 +33,12 @@ func NewRouter(cfg *config.Config, logger *zap.Logger, db *gorm.DB) *gin.Engine 
 
 	api := r.Group("/api/v1")
 
-	// 免鉴权区：契约 §1 的白名单共 4 个端点，本轮只有 /health 落地，
-	// 另三个 auth 端点由 feature/auth-login 挂在同一个 api 组上。
+	// 免鉴权区：契约 §1 的白名单共 4 个端点，全部挂在这个组上（无 JWTAuth）。
+	// 挂到 protected 上会变成"要先登录才能登录"，前端会卡在登录页出不去。
 	api.GET("/health", healthHandler(cfg, db))
+
+	authService := service.NewAuthService(db, cfg.JWT)
+	RegisterAuthRoutes(api, NewAuthHandler(authService))
 
 	// 业务路由一律挂 protected：它比 api 多一道 JWTAuth。
 	protected := api.Group("")
