@@ -75,6 +75,19 @@ func (r *UserRepo) FindByUsername(ctx context.Context, username string) (*model.
 	return &u, nil
 }
 
+// FindByID 按主键读一行，未命中返回 gorm.ErrRecordNotFound。
+// 调用方（刷令牌）拿到的 id 来自令牌里已验过签名的 claims，不是前端传的。
+func (r *UserRepo) FindByID(ctx context.Context, id uint64) (*model.User, error) {
+	var u model.User
+	err := r.db.WithContext(ctx).
+		Where("id = ?", id).
+		First(&u).Error
+	if err != nil {
+		return nil, err
+	}
+	return &u, nil
+}
+
 // FindByEmail 按邮箱读一行，未命中返回 gorm.ErrRecordNotFound。
 func (r *UserRepo) FindByEmail(ctx context.Context, email string) (*model.User, error) {
 	var u model.User
