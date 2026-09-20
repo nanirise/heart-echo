@@ -1,11 +1,12 @@
 # PROGRESS
 
-最后更新：2026-09-19
+最后更新：2026-09-20
 
 ## 成员1
-- 在做：**persona 路由挂载已推、待开 PR**——分支 `feature/backend-persona-routes`（3 个 commit，相对 `develop` 改 4 个文件 +300/−12）：`router.go` 把成员 3 的 4 条 persona 路由装配到 `protected` 组（此前一条都访问不到，`GET /api/v1/personas` 返回 404），加 `router_test.go`（259 行，4 个测试 / 11 条子用例）与交接文档。**代码已 push，只差在 GitHub 网页开 PR**（本机没装 `gh`）
-  **auth 的 PR B / PR C 一行代码都还没写**——`internal/{dto/auth_dto.go,repository/user_repo.go,service/auth_service.go,handler/auth_handler.go}` 四个文件均不存在
-- 下一步：① 开上面那个 PR（base `develop` ← `feature/backend-persona-routes`）；② 从 `develop` 切 `feature/auth-register-login` 开工 **PR B**，按 [auth-login plan §1](docs/specs/auth-login/plan.md) 的 Step 2 dto → 3 repo → 4 service → 5 handler → 6 挂载，**顺序不可颠倒**（类型从内向外依赖，先写外层会反复返工）；③ PR C（`GET`/`PUT /user/profile`、`PUT /user/password`）。估时：PR B 1 天、PR C 半天（AI 辅助下的容量，参照 PR A 一天完成的实测）
+- 在做：**auth 的 PR B 代码写完，待开 PR**——分支 `feature/auth-register-login`（领先 `develop` 4 个 commit，均已推送）。内容：register / login / refresh 三个端点，按 [auth-login plan §1](docs/specs/auth-login/plan.md) 的 Step 2 dto → 3 repo → 4 service → 5 handler → 6 挂载走完。`go build` / `go vet` / `go test ./...` 全绿；新增的每条测试都做过**反向注入**（把 binding tag 削弱、把 auth 路由挂到 `protected` 上），确认该红的都红了
+  （原「persona 路由挂载待开 PR」已于 2026-09-20 以 **PR #42** 合并进 `main`，本条作废）
+  **PR C 未开始**（`GET`/`PUT /user/profile`、`PUT /user/password`），等 PR B 合并后从 `develop` 切 `feature/auth-profile`
+- 下一步：① 开 PR B（base **`develop`** ← `feature/auth-register-login`），描述里写明**未做端到端验证**；② 合并后切 `feature/auth-profile` 做 PR C——repo 剩 2 个方法（`UpdateProfile` / `UpdatePassword`）、service 剩 3 个、handler 剩 3 个 + `RegisterUserRoutes(protected, h)` + `router.go` 1 行；③ 装 Docker 后补 3 个端点的端到端验证
 - ★ **遗留待补（2026-09-19 已知未做，下次改）**：
   1. `docs/specs/auth-login/spec.md` 未收尾：§5.1 的 8 个验收勾、§6 变更记录加一行、§7 待确认第 2 条（广播）、头部状态行补「PR A 已合并」
   2. `docs/API_CONTRACT.md` §12 的「已广播」列**仍全为 ⬜**、§13 三方冻结签署仍空白。**队长 2026-09-19 判定这两条「算通过」，文档尚未同步**——不改的话以后没人说得清
@@ -14,6 +15,8 @@
   5. **本文件下面的成员 2 / 成员 3 段落已过期**：成员 2 写「在做前端数据契约层」但那是早已合并的 PR #21；成员 3 整段空白，而他实际交付了 8 个 model PR + persona CRUD 后端。这份表现在不能当排期依据（他们的段落不归我改）
   6. ~~`router.go` 第 40 行「本轮 JWTAuth 仍是空壳」的失效注释~~ —— **本次 PR 已修**
   7. **新发现（本 PR 不修）**：`gin-contrib/cors` 收到**空的 origin 列表会直接 panic**（`all origins disabled`）。生产靠 `internal/config` 里 `CORS_ALLOW_ORIGINS` 的 `envDefault` 兜着，但谁在 `.env` 里显式写一行 `CORS_ALLOW_ORIGINS=`（空串），服务会在**启动时 panic**，而不是报一条配置错误
+  8. **新发现（2026-09-20，本 PR 不修，归全员）**：`gofmt -l .` 会在 `backend/` 下列出 30+ 个文件，逐个查过**都不是排版问题、是 CRLF 行尾**（`tr -d '\r'` 之后 gofmt 差异为空）。已有的文件是 CRLF、本次新增的是 LF。现在没人管这条，但**若 CI 将来加 `gofmt -l` 检查会全线报红**。要治就统一行尾（`.gitattributes` 或 `core.autocrlf`），是全局决定，不该我单独改一批文件
+  9. **新发现（2026-09-20，本 PR 不修）**：`encoding/json` 匹配结构体字段时**优先精确匹配、匹配不上会退化成大小写不敏感匹配**。所以契约 §3.1 的 `username` 写成 `userName` 也能落进 `RegisterRequest.Username`——请求体这侧的 json tag 名**在 Go 这层钉不住**（`internal/dto/auth_dto_test.go` 里留了一条断言放行的用例记录这件事）。真正被钉住的是**响应体**的字段名（`TestUserResponseJSONTags` 逐字比对）。**成员 2**：前端按契约写 `username`，别依赖这个宽容
 - 卡住：**本机无 Docker / PostgreSQL**，auth 的 6 个端点拿不到端到端验证手段（`docs/specs/auth-login/spec.md` §3.3 已记录并接受该约束）。PR B 只能带单测提上去，PR 描述里必须写明「未做端到端验证」。**Week 1 里程碑里「与成员 2 前后端联调成功」这一条，在装 Docker 之前达不成**——不是工时问题
 - 改了哪些文件：
   - 已合入 `develop`：`backend/pkg/{errcode,response,logger,jwt}/`（PR #12）、`backend/internal/config/` + `backend/.env.example`（PR #20）、`backend/internal/middleware/{recovery,logger,cors,biz_error,jwt}.go` + `gin-contrib/cors` 依赖（PR #23）；`backend/internal/handler/{router.go,health_handler.go}`、`backend/cmd/server/main.go`（Step 8–10）
@@ -24,6 +27,8 @@
   - 全局契约与总纲：`AGENTS.md` §4.3、`docs/dev/MASTER.md` §4.5（路由示例拆成 `api` / `protected` 双组）、`docs/API_CONTRACT.md` §2/§4/§5/§7/§9/§10/§11、`docs/TECH_DESIGN.md` §4.4/§4.7（示例代码与实际实现对不上，已修正）
   - 任务书：`docs/dev/MEMBER_1_BACKEND_AI.md` §1（准备期清单 9 项按实际进度重标）
   - 本功能文档：`docs/specs/backend-skeleton/{spec.md,plan.md}`、`.learn/2026-09-16-router-assembly.md`（本地未追踪）
+  - auth PR B 新增（`feature/auth-register-login`）：`backend/internal/dto/auth_dto.go`、`backend/internal/dto/auth_dto_test.go`、`backend/internal/repository/user_repo.go`、`backend/internal/repository/user_repo_test.go`、`backend/internal/service/auth_service.go`、`backend/internal/service/auth_service_test.go`、`backend/internal/handler/auth_handler.go`
+  - auth PR B 修改：`backend/internal/handler/router.go`（3 条 auth 路由挂到**免鉴权的 `api` 组** + 更新白名单注释）、`backend/internal/handler/router_test.go`（加 `TestAuthRoutesAreNotBehindJWTAuth`）、`backend/go.mod` + `go.sum`（`golang.org/x/crypto`、`github.com/jackc/pgx/v5` 由 indirect 变 direct）、`docs/specs/auth-login/plan.md`、`PROGRESS.md`
 
 ## 成员2
 - 在做：分支 2「前端数据契约层」编码完成、等 PR —— `src/types/api.ts`、`src/types/errcode.ts`、`frontend/.env.example`，spec 与 plan 已提交（`docs/specs/frontend-api-types/`）
