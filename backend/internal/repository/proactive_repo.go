@@ -34,3 +34,39 @@ func (r *ProactiveRepo) CreateDefaultSettings(ctx context.Context, tx *gorm.DB, 
 	}
 	return tx.WithContext(ctx).Create(s).Error
 }
+
+// Get 读当前用户的某一行配置，未命中返回 gorm.ErrRecordNotFound。
+// 两个条件都带：对"别人的 persona"与"不存在的 persona"返回同一个 not found，二者不可区分。
+func (r *ProactiveRepo) Get(ctx context.Context, userID, personaID uint64) (*model.ProactiveSetting, error) {
+	var s model.ProactiveSetting
+	err := r.db.WithContext(ctx).
+		Where("persona_id = ? AND user_id = ?", personaID, userID).
+		First(&s).Error
+	if err != nil {
+		return nil, err
+	}
+	return &s, nil
+}
+
+// UpdateOwned 改四个可改列并返回受影响行数。
+// ⛔ 必须走 map：这四列带 default: tag，用 struct 传时零值字段会被整条跳过——关掉主动消息
+// （enabled:false / daily_limit:0）会变成 Error=nil、RowsAffected=0 的静默空操作；map 的
+// 键值原样进 SET，既不跳零值也不做 tag 值替换。last_nudge_at 不进 map（契约 §9 只读）。
+func (r *ProactiveRepo) UpdateOwned(
+	ctx context.Context, tx *gorm.DB, userID, personaID uint64,
+	enabled bool, intervalMin, intervalMax, dailyLimit int,
+) (int64, error) {
+	res := tx.WithContext(ctx).Model(&model.ProactiveSetting{}).
+		Where("persona_id = ? AND user_id = ?", personaID, userID).
+		Updates(map[string]any{
+			"enabled":      enabled,
+			"interval_min": intervalMin,
+			"interval_max": intervalMax,
+			"daily_limit":  dailyLimit,
+		})
+	if res.Error != nil {
+		return 0, res.Error
+	}
+	// 0 = WHERE 没匹配到（播种缺失或不是自己的行），不是"值没变"：同值 UPDATE 在 Postgres 里仍算匹配，返回 1
+	return res.RowsAffected, nil
+}
