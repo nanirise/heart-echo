@@ -89,9 +89,16 @@ type UpdateProfileReq struct {
 
 做法：用户不存在时，对一个固定的假哈希照样跑一次 `CompareHashAndPassword`，让两条路径耗时相近。
 
-### 3.5 bcrypt 在 72 字节处截断（Step 2）
+### 3.5 bcrypt 在 72 字节处**报错**，不是截断（Step 2）
 
-契约 §3.1 要求密码"8–32 位，限 ASCII 可见字符"就是为了这个：bcrypt 只看前 72 字节，超长部分**静默失效**。32 个 ASCII 字符最多 32 字节，留足余量。binding tag 要同时限制长度和字符集（`alphanum` 不够——`Passw0rd!` 里有 `!`）。
+> 更正（2026-09-21）：本节原写"只看前 72 字节、超出部分静默失效"，与所用版本的行为不符。
+> `golang.org/x/crypto@v0.55.0` 的 `bcrypt/bcrypt.go:96`：`GenerateFromPassword` 在
+> `len(password) > 72` 时 `return nil, ErrPasswordTooLong`。**行为是拒绝，不是丢弃。**
+> 结论（必须限制密码长度）不变，理由变了。
+
+契约 §3.1 要求密码"8–32 位，限 ASCII 可见字符"就是为了这个：不给上限的话，超长密码会让 `hashPassword` 失败，`Register` 走 `errcode.Wrap(errcode.ErrInternal, err)`，用户拿到的是 `5000 服务端内部错误`——一个他改不了、重试也没用的错。32 个 ASCII 字符最多 32 字节，离 72 有大余量。binding tag 要同时限制长度和字符集（`alphanum` 不够——`Passw0rd!` 里有 `!`）。
+
+顺带一处不对称：`CompareHashAndPassword`（登录方向，`bcrypt.go:108-125`）**没有**这个长度检查。生成方向报错，比对方向不报错。
 
 ### 3.6 目标用户只能来自 token（Step 4–5）
 

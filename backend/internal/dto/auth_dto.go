@@ -13,8 +13,10 @@ type RegisterRequest struct {
 	// 数据库报 22001（值太长），错误码变成 5003「数据库操作失败」而不是 4001。
 	Email string `json:"email"    binding:"required,email,max=100"`
 	// printascii 限定可打印 ASCII（\x20-\x7E，含空格），是给 bcrypt 用的约束：
-	// bcrypt 只取前 72 字节，超出部分被静默丢弃，会出现"两个不同密码哈希相同"。
-	// min/max 数的是字符数，ASCII 下字符数 = 字节数，32 个字符最多 32 字节，留足余量。
+	// bcrypt 对超过 72 字节的密码**直接返回 ErrPasswordTooLong**（x/crypto v0.55.0
+	// 的 GenerateFromPassword，不是截断），hashPassword 会把它包成 5000。
+	// max=32 就是拦这一步的闸——把 5000 换成 4001，不是防截断（那里不截断）。
+	// min/max 数的是字符数，ASCII 下字符数 = 字节数，32 个字符最多 32 字节，离 72 有大余量。
 	Password string `json:"password" binding:"required,min=8,max=32,printascii"`
 }
 

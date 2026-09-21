@@ -1,12 +1,13 @@
 # PROGRESS
 
-最后更新：2026-09-20
+最后更新：2026-09-21
 
 ## 成员1
-- 在做：**auth 的 PR B 代码写完，待开 PR**——分支 `feature/auth-register-login`（领先 `develop` 4 个 commit，均已推送）。内容：register / login / refresh 三个端点，按 [auth-login plan §1](docs/specs/auth-login/plan.md) 的 Step 2 dto → 3 repo → 4 service → 5 handler → 6 挂载走完。`go build` / `go vet` / `go test ./...` 全绿；新增的每条测试都做过**反向注入**（把 binding tag 削弱、把 auth 路由挂到 `protected` 上），确认该红的都红了
-  （原「persona 路由挂载待开 PR」已于 2026-09-20 以 **PR #42** 合并进 `main`，本条作废）
-  **PR C 未开始**（`GET`/`PUT /user/profile`、`PUT /user/password`），等 PR B 合并后从 `develop` 切 `feature/auth-profile`
-- 下一步：① 开 PR B（base **`develop`** ← `feature/auth-register-login`），描述里写明**未做端到端验证**；② 合并后切 `feature/auth-profile` 做 PR C——repo 剩 2 个方法（`UpdateProfile` / `UpdatePassword`）、service 剩 3 个、handler 剩 3 个 + `RegisterUserRoutes(protected, h)` + `router.go` 1 行；③ 装 Docker 后补 3 个端点的端到端验证
+- 在做：**Week 1 完成**（2026-09-21 实测通过）。总纲 §7 给 Week 1 定的验收项「与成员 2 前后端联调成功」达成——PR B 合并后一直欠着的那一步补上了，五条都在浏览器里跑通：① 注册后直接进 `/chat` ② **F5 刷新仍保持登录态**（从 localStorage 的 `heart-echo-auth` 恢复，这是 Week 1 唯一的真验收项）③ 换隐身窗口走 `/login` 能进 ④ 密码错 → `4013`、重复用户名 → `4004` ⑤ 后端访问日志里能看到 `POST /api/v1/auth/register` 真的打进来
+  联调环境（**本机，不入库**）：原生 **PostgreSQL 16**，不走 Docker。**库名、账号、密码三样都是 `heart`**；`backend/.env` / `frontend/.env` 由各自 `.env.example` 复制后改值——**注意本地 `DB_USER`/`DB_NAME` 是 `heart`，不是模板里的 `heart_echo`**。`.env` 不入库，各人本地自成一套，照抄模板去连库会连错
+  踩到一个 PostgreSQL 15+ 的行为变化，记一笔：**普通角色在 `public` schema 建表会被拒（`SQLSTATE 42501`）**。Docker 的 postgres 镜像把 `POSTGRES_USER` 建成超级用户，所以撞不到；原生装法用的是普通角色，必须补一句 `ALTER SCHEMA public OWNER TO heart;`（在该库内执行）。**成员 3** 若也用原生 PG 跑 schema 核对，会卡在这一步
+  **PR C 未开始**（`GET`/`PUT /user/profile`、`PUT /user/password`），可从 `develop` 切 `feature/auth-profile`
+- 下一步：① 进 **Week 2 生死线：流式对话（SSE）**——`ai-service/` 目录**尚不存在**，`chat_service` / `message_repo` / `chat_handler` / Go 侧的 AI 客户端也一行没写，先从 `docs/specs/chat-message/` 的 spec 读起；② 之后再切 `feature/auth-profile` 做 PR C（repo 剩 2 个方法、service 剩 3 个、handler 剩 3 个 + `router.go` 1 行）
 - ★ **遗留待补（2026-09-19 已知未做，下次改）**：
   1. `docs/specs/auth-login/spec.md` 未收尾：§5.1 的 8 个验收勾、§6 变更记录加一行、§7 待确认第 2 条（广播）、头部状态行补「PR A 已合并」
   2. `docs/API_CONTRACT.md` §12 的「已广播」列**仍全为 ⬜**、§13 三方冻结签署仍空白。**队长 2026-09-19 判定这两条「算通过」，文档尚未同步**——不改的话以后没人说得清
@@ -17,7 +18,11 @@
   7. **新发现（本 PR 不修）**：`gin-contrib/cors` 收到**空的 origin 列表会直接 panic**（`all origins disabled`）。生产靠 `internal/config` 里 `CORS_ALLOW_ORIGINS` 的 `envDefault` 兜着，但谁在 `.env` 里显式写一行 `CORS_ALLOW_ORIGINS=`（空串），服务会在**启动时 panic**，而不是报一条配置错误
   8. **新发现（2026-09-20，本 PR 不修，归全员）**：`gofmt -l .` 会在 `backend/` 下列出 30+ 个文件，逐个查过**都不是排版问题、是 CRLF 行尾**（`tr -d '\r'` 之后 gofmt 差异为空）。已有的文件是 CRLF、本次新增的是 LF。现在没人管这条，但**若 CI 将来加 `gofmt -l` 检查会全线报红**。要治就统一行尾（`.gitattributes` 或 `core.autocrlf`），是全局决定，不该我单独改一批文件
   9. **新发现（2026-09-20，本 PR 不修）**：`encoding/json` 匹配结构体字段时**优先精确匹配、匹配不上会退化成大小写不敏感匹配**。所以契约 §3.1 的 `username` 写成 `userName` 也能落进 `RegisterRequest.Username`——请求体这侧的 json tag 名**在 Go 这层钉不住**（`internal/dto/auth_dto_test.go` 里留了一条断言放行的用例记录这件事）。真正被钉住的是**响应体**的字段名（`TestUserResponseJSONTags` 逐字比对）。**成员 2**：前端按契约写 `username`，别依赖这个宽容
-- 卡住：**本机无 Docker / PostgreSQL**，auth 的 6 个端点拿不到端到端验证手段（`docs/specs/auth-login/spec.md` §3.3 已记录并接受该约束）。PR B 只能带单测提上去，PR 描述里必须写明「未做端到端验证」。**Week 1 里程碑里「与成员 2 前后端联调成功」这一条，在装 Docker 之前达不成**——不是工时问题
+  10. **`SCHEMA_CHECK_DSN` 与 `DB_*` 两套连接配置并存**（2026-09-21 发现）：`cmd/migrate` 用前者、`cmd/server` 用后者，且前者不加载 `.env`、不在 `.env.example` 里。属**跨成员约定**，要队长拍板是否统一（`docs/specs/persona-model/plan.md:161` 已记为待定）。本轮不改代码，只在跑 migrate 时临时 export
+  11. **bcrypt 72 字节的说法在 6 处仍是错的**（2026-09-21 更正，见下方「接口/数据结构变更」）：`docs/specs/auth-login/spec.md:116`（归我，待改）；`AGENTS.md:138`、`docs/API_CONTRACT.md:97`、`docs/TECH_DESIGN.md:853`、`docs/TECH_DESIGN.md:1079`（**共享文件，要广播**）；`docs/specs/frontend-auth-pages/plan.md:112`（**成员 2 的文件**，不自己动）。结论（必须限制密码长度）不变，只是理由从「截断」改成「报 `ErrPasswordTooLong`」。**建议凑一次广播一起改**——反正契约 §12 的「已广播」列本来就全空，欠着
+- 卡住：**无**。此前「本机无 PostgreSQL」的阻塞已解，Week 1 端到端验证跑通。
+  仍**未决**（不阻塞，但欠着）：`cmd/migrate` 读的是**裸 `os.Getenv("SCHEMA_CHECK_DSN")`**，不加载 `.env`、也不在 `.env.example` 里；而 `cmd/server` 走的是 `DB_*` 系列。两套连接参数各说各的。**「该不该统一」待队长拍板**（记录在 `docs/specs/persona-model/plan.md:161`）。眼下跑迁移时临时 `export` 一个绕开，**没改代码**
+  **Docker 推迟到 Week 2 流式对话做完再装**——Week 4 的部署/交付才真正需要它
 - 改了哪些文件：
   - 已合入 `develop`：`backend/pkg/{errcode,response,logger,jwt}/`（PR #12）、`backend/internal/config/` + `backend/.env.example`（PR #20）、`backend/internal/middleware/{recovery,logger,cors,biz_error,jwt}.go` + `gin-contrib/cors` 依赖（PR #23）；`backend/internal/handler/{router.go,health_handler.go}`、`backend/cmd/server/main.go`（Step 8–10）
   - PR A 新增（PR #34）：`docs/specs/auth-login/{spec.md,plan.md}`、`backend/internal/middleware/jwt_test.go`
@@ -105,6 +110,18 @@
   - 改为改签名段的**首字符**（6 位全是有效数据，改它必然改变签名字节），并对原字符做避让（撞上原字符等于没改，概率 1/64）。20 万个真随机签名对照实验：旧写法 12451 次篡改无效（6.23%），新写法 0 次
   - 涉及文件：`backend/pkg/jwt/jwt_test.go`、`backend/internal/middleware/jwt_test.go`、`backend/pkg/jwt/jwt.go`（注释里「过期 → 4011、其余一律 → 4010」订正为 4012 / 4011，与契约 §2 对齐）
   - 其他人要做什么：无。但**写测试时注意**：base64 / JWT 这类「改末位字符」的篡改手法都可能因填充位而失效，改中间的字符更可靠
+- 有（2026-09-21 新增，**不是接口变更，是文档订正 + 待广播**）：
+  - 改了什么：bcrypt 在 72 字节处的行为，**文档一直写错了**。原文各处都写「只看前 72 字节，超出部分静默失效（截断）」，而 `golang.org/x/crypto@v0.55.0` 的 `bcrypt/bcrypt.go:96` 是 `if len(password) > 72 { return nil, ErrPasswordTooLong }`——**是拒绝，不是丢弃**。
+  - **结论完全不变**（密码必须限长，`binding:"...max=32,printascii"` 照旧），**变的只是理由**：不是「超出部分白设」，而是「超长密码会让 `hashPassword` 返回错误 → 用户拿到一个改不了也重试不了的 `5000`」。谁维护这块时按旧理由推演，会推出「那把上限提到 100 也没事」这种错结论。
+  - 顺带一处不对称：`CompareHashAndPassword`（登录方向）**没有**这个长度检查。生成方向报错、比对方向不报错。
+  - 涉及文件：**已改** `backend/internal/dto/auth_dto.go`（注释）、`docs/specs/auth-login/plan.md` §3.5
+  - ⏳ **待广播（6 处仍是错的）**：`docs/specs/auth-login/spec.md:116`（我的，待改）；`AGENTS.md:138`、`docs/API_CONTRACT.md:97`、`docs/TECH_DESIGN.md:853`、`docs/TECH_DESIGN.md:1079`（**共享文件，需广播**）；`docs/specs/frontend-auth-pages/plan.md:112`（**成员 2 的文件，我不动**）
+  - 其他人要做什么：**成员 2** 如见到 `docs/specs/frontend-auth-pages/plan.md:112` 的同款说法，可顺手订正（那是你的文件）；其余共享文件等广播后一起改。**不改也不影响任何代码行为**——只是别拿旧说法做新推导
+- 有（2026-09-21 新增，**不是接口变更，是范围冻结，但成员 3 要看**）：
+  - 决定了什么：**流式对话做真流式（SSE），不做伪流式**。`POST /chat/stream` 按 `docs/API_CONTRACT.md` §6 实现（那份契约已冻结，前端成员 2 早已按它写好了消费端）。**负责人：成员 1**（`docs/specs/chat-message/spec.md` 里这条本就分给我）
+  - 为什么现在定：`chat_service` / `message_repo` / `chat_handler` 和 `ai-service/` **一行都还没写**——这是最后能低成本改口的时刻；再往后就是返工。且总纲 §10「🚫 绝不砍」清单里就有「流式对话」
+  - 涉及文件（**将来要新增，现在都还不存在**）：`backend/internal/handler/chat_handler.go`、`backend/internal/service/chat_service.go`、`backend/internal/repository/message_repo.go`、`backend/internal/client/ai_client.go`、`ai-service/`（整个目录尚未创建）
+  - 其他人要做什么：**成员 3**——`chat_messages` 表是你建的，若你原计划里有「伪流式」的中间态（比如先整段返回再切片）请停手，通道语义要对齐 SSE；**成员 2**——无动作，前端按契约 §6 写的实现就是对的，这次是后端跟上
 
 ## 待确认
 - 错误码规则已于 2026-09-13 定为：**资源越权 → `4043`**、**功能越权 → `4030`**、**`4031` 废弃**。两处文档均已同步：
