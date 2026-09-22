@@ -1,0 +1,248 @@
+# 聊天页（frontend-chat-view）· 实施计划
+
+> 配套合同：[spec.md](spec.md)。本文只记录**怎么做**与**为什么这么做**。
+> 注释纪律见 [AGENTS §5.1](../../../AGENTS.md)：代码里只留「为什么」，讲解留在本文。
+
+| 项 | 值 |
+|----|-----|
+| 分支 | `feature/frontend-chat-view` |
+| 状态 | 🚧 进行中 |
+| 依赖 | 无（`develop` `b05a311` 切出） |
+| 规模 | 10 个源文件（9 新增 + 1 修改）+ 2 篇文档 |
+
+---
+
+## 1. 步骤拆解
+
+| # | 步骤 | 产物 | 状态 |
+|---|------|------|:----:|
+| 1 | 写 `spec.md` 与 `plan.md` | 2 篇文档 | ✅ |
+| 2 | `types/chat.ts`（消息与流事件的类型） | 新增 | ⏳ |
+| 3 | `api/chat.ts`（SSE 解析 + 历史消息） | 新增 | ⏳ |
+| 4 | `api/mock/chat.ts` + `api/mock/index.ts`（同签名 Mock + 开关） | 新增 | ⏳ |
+| 5 | `stores/chat.ts`（列表、发送、打字机、红点） | 新增 | ⏳ |
+| 6 | `components/chat/` 三个组件 | 新增 | ⏳ |
+| 7 | `views/chat/ChatView.vue` | 新增 | ⏳ |
+| 8 | 路由表换 `component`（1 行） | 改 `router/index.ts` | ⏳ |
+| 9 | 自查：`typecheck` / `build` / 浏览器逐条过 spec §5.1 | 证据 | ⏳ |
+| 10 | 提交：文档一笔、代码一笔 | 2 笔 | ⏳ |
+
+**顺序理由**：类型 → 请求 → Mock → store → 组件 → 视图 → 路由，自下而上。最关键是**第 8 步必须最后做**：路由表引用的文件不存在时 `vue-tsc` 报 TS2307、构建直接失败（3-B 与 frontend-auth-pages 都踩过同一个坑）。
+
+---
+
+## 2. 文件清单
+
+| 文件 | 类型 | 说明 |
+|------|------|------|
+| `frontend/src/types/chat.ts` | 新增 | `ChatMessage` / `StreamChatPayload` / 三种事件 payload |
+| `frontend/src/api/chat.ts` | 新增 | `streamChat()` / `getMessages()` |
+| `frontend/src/api/mock/chat.ts` | 新增 | 与上面**同签名**的 Mock |
+| `frontend/src/api/mock/index.ts` | 新增 | `VITE_USE_MOCK` 分流出口 |
+| `frontend/src/stores/chat.ts` | 新增 | 会话状态与动作 |
+| `frontend/src/views/chat/ChatView.vue` | 新增 | 对话页骨架 |
+| `frontend/src/components/chat/MessageBubble.vue` | 新增 | 消息气泡 |
+| `frontend/src/components/chat/ChatInput.vue` | 新增 | 输入框 |
+| `frontend/src/components/chat/TypingIndicator.vue` | 新增 | 等待态 |
+| `frontend/src/router/index.ts` | 修改 | `chat/:personaId?` 的 `component` 换成真实懒加载 import |
+| `docs/specs/frontend-chat-view/spec.md` | 新增 | 合同 |
+| `docs/specs/frontend-chat-view/plan.md` | 新增 | 本文 |
+
+`views/chat/`、`components/chat/`、`api/mock/` 三个目录本支首次创建。
+
+---
+
+## 3. 关键实现要点
+
+### 3.1 为什么 `api/chat.ts` 不走 `request.ts` 的 axios 实例
+
+`request.ts` 是我们**所有普通接口**的统一出口（自动带 token、统一解包、4012 自动刷新重放）。但 `streamChat()` **必须绕开它**，直接用原生 `fetch`：
+
+1. **axios 会把整个响应缓冲完再交给你。** 它的 `response.data` 是一个「完整的、已解析」的对象——而 SSE 的全部价值在于**边收边用**。等 axios 返回时流已经结束了，打字机效果无从谈起。
+2. **要读的是字节流，不是 JSON。** `fetch` 给的 `response.body` 是 `ReadableStream<Uint8Array>`，`getReader()` 能一段一段地读。这是浏览器唯一能逐块消费响应的接口。
+
+**但这样就丢掉了 `request.ts` 的三件事**，必须手工补回来（这是本支最容易漏的部分）：
+
+| `request.ts` 原本负责 | `streamChat()` 要手工做 |
+|---|---|
+| 请求拦截器自动加 `Authorization` | 自己从 `authStore` 取 `accessToken` 拼头 |
+| 响应拦截器解包 / 抛 `ApiError` | 自己判断 `response.ok`，构造 `ApiError` |
+| 4012 自动刷新后重放 | **本支不做**（见 §3.7） |
+
+> 代码里要给这三件事写一句「为什么」注释：说明「此处刻意不复用 request.ts，因为 axios 会缓冲整个响应、破坏流式」。
+
+### 3.2 半行解析：本支最容易写错的一点
+
+SSE 的字节流**可以在任意位置被切开**。服务端发的是：
+
+```
+event: delta\ndata: {"text":"辛苦"}\n\nevent: delta\ndata: {"text":"了"}\n\n
+```
+
+但浏览器给你的 chunk 可能长这样（`|` 是切点）：
+
+```
+chunk 1:  event: delta\ndata: {"tex|      ← 事件块没结束
+chunk 2:  t":"辛苦"}\n\nevent: delta\nda|    ← 补完上一个，又切下一个
+chunk 3:  ta: {"text":"了"}\n\n              ← 补完
+```
+
+**错误做法**：每个 chunk 直接 `JSON.parse` → 必然在 chunk 1 和 2 上崩，且报的是「Unexpected end of JSON input」这种和真实原因毫不相干的错。
+
+**正确做法**——维护一个跨 chunk 存活的 buffer：
+
+```ts
+let buffer = ''
+
+while (true) {
+  const { done, value } = await reader.read()
+  if (done) break
+
+  // 用 { stream: true } 让解码器也保留跨 chunk 的半截多字节字符
+  buffer += decoder.decode(value, { stream: true })
+
+  // 按空行切事件块；最后一段可能不完整，留在 buffer 里
+  const blocks = buffer.split('\n\n')
+  buffer = blocks.pop() ?? ''
+
+  for (const block of blocks) {
+    // 解析 event: / data: 两行
+  }
+}
+```
+
+两个容易漏的细节：
+
+- **`decoder.decode(value, { stream: true })` 的 `{ stream: true }` 是必需的**。中文一个字符占 3 字节 UTF-8，同样可能被切在中间。不加这个参数，`TextDecoder` 会在 chunk 边界把半个汉字解成 `` ——表现是**偶发乱码**，而且只在中文回复长到跨 chunk 时才出现，极难复现。
+- **`buffer = blocks.pop() ?? ''` 这一句要写 `?? ''`**。`pop()` 在空数组上返回 `undefined`，TS `strict` 下不写 `?? ''` 会报类型不匹配（这正是想要的效果——逼你处理它）。
+
+> `.split('\n\n')` 里的 `\n\n` 是 SSE 的**事件分隔符**（规范里 CRLF 也合法，但契约 §6 的例子用的是 `\n`；为稳妥，解析前可先统一 `\r\n` → `\n`）。
+
+### 3.3 三种事件的处理，以及为什么未知事件要静默忽略
+
+契约 §6 冻结了三种事件，各自的动作是：
+
+| event | data | 动作 |
+|---|---|---|
+| `delta` | `{text}` | 追加到当前 AI 消息的 `content` 末尾（打字机） |
+| `done` | `{messageId}` | 结束流；把临时消息的 id 补成真实 id |
+| `error` | `{code, message}` | 结束流；**在 UI 上显示错误 + 重试按钮** |
+
+**未知事件名必须静默忽略，不能抛错。** 理由：契约 §6 写着「事件类型不可私自增删」，那是约束**后端**不许随手加；但**前端**面对一个不认识的 `event: ping` 时，正确反应是跳过它继续读，而不是整个流中断。这是流协议的通行做法——**对扩展宽容，对内容严格**。
+
+**`error` 事件的特殊性**：它出现时 **HTTP 状态码仍然是 200**（契约 §6 原文：「HTTP 状态仍为 200，错误通过事件传递」）。所以**绝不能**靠 `response.ok === false` 来判断失败——请求从 HTTP 角度看是成功的，失败信息藏在事件里。这个设计的好处是：连接建立之后才发生的错误（比如 LLM 中途挂了）也能用同一个通道告诉你，而不用去改已经发出去的 HTTP 状态码。
+
+### 3.4 `done` 事件为什么不用它带的内容
+
+`done` 只带 `messageId`，**不带全文**。所以本地那条 AI 消息的 `content` 是**我们自己一个 delta 一个 delta 拼出来的**。
+
+这里有个容易被忽略的后果：**拼接结果与后端落库的内容可能有细微差异**（我们丢过一个未知事件，或最后一个 delta 没读完）。所以 `done` 到达时，**不做「用后端全文覆盖本地文本」的操作**（契约也没给全文），只把 `messageId` 补上。若将来发现内容不一致，正确做法是**重新拉一次历史消息**，而不是假设本地拼的一定对。
+
+### 3.5 Mock 怎么做才是「同签名、同结构」
+
+[MEMBER_2_FRONTEND §3](../../dev/MEMBER_2_FRONTEND.md) 要求 Mock「后端未就绪时页面可跑」，[AGENTS §4.9](../../../AGENTS.md) 要求「与真实实现返回同样的 `data` 结构」。做法：
+
+**`api/mock/index.ts` 只做一件事——分流**：
+
+```ts
+import * as real from '@/api/chat'
+import * as mock from '@/api/mock/chat'
+
+// 只在这里判断开关，业务代码永远 import 这个出口
+export const chatApi = import.meta.env.VITE_USE_MOCK === 'true' ? mock : real
+```
+
+调用方一律 `import { chatApi } from '@/api/mock'`，**永远不出现 `if (USE_MOCK)` 的分支**。这样切开关时调用方代码一行不改（这正是 spec §4.8 的要求）。
+
+**Mock 也要走真实的解析路径**——这是本支 Mock 和普通「假数据」最大的区别：
+
+Mock 的 `streamChat()` **不直接回调**，而是构造一个真正的 `ReadableStream`，把 SSE 文本按分片 `enqueue` 进去，然后**复用与真实实现完全相同的解析函数**。收益有两条：
+
+1. **§3.2 的半行解析逻辑在 Mock 下就被真实检验了。** 如果 Mock 直接 `onDelta('辛苦')`，那解析代码一行都没跑过，等后端就位才发现切分写错——那就是 Mock 最坏的用法（给了虚假信心，[frontend-auth-pages plan.md §3.6](../frontend-auth-pages/plan.md) 已经点过这个风险）。
+2. **能给 §5.1 的验收项提供手段**：Mock 支持一个「分片大小」参数，设成 1 字节就能把每个事件切得七零八落；再加一个「注入 error 事件」开关，用来验错误路径。
+
+Mock 数据本身要覆盖几种边界：**3 个人设**（侧栏切换）、**一段倒序的历史消息**（验反转）、**一个空对话的人设**（验空态）。
+
+### 3.6 历史消息为什么要自己反转
+
+契约 §5 明确 `GET /chat/personas/:personaId/messages` **倒序返回（最新在前）**。后端这么做是为了配合**分页**——第一页就是最新的 20 条，越往后翻越旧，符合「先看最近的」这个真实需求。
+
+但**界面的阅读顺序是「旧在上、新在下」**（微信、iMessage 都是这样）。所以 `getMessages()` 拿到数组后要 `reverse()` 再交给 store 渲染。
+
+**这个反转放在 `api/chat.ts` 里做，不放在组件里。** 理由：这是**接口语义与界面语义的翻译**，属于请求层的职责；放在组件里，将来第二个消费点（比如历史消息弹窗）就要记得再反转一次，忘一次就显示反了。
+
+两个配套的坑：
+
+- **空对话返回 `200 + []`，不是 `4043`**。契约 §5 写得很清楚。`[]` 反转还是 `[]`，正常显示空对话态；**不要**把空数组当错误处理。
+- **`page` / `pageSize` 会被后端钳制**（默认 20、上限 100），**且非法值不返回 `4001`**——你传 `pageSize=99999` 它默默给你 100。所以前端**不要**指望「传了就按传的来」，也不要做「先查最大值」这种多余的事。
+
+### 3.7 `streamChat` 不做 4012 刷新重放（本支唯一的功能缺口）
+
+`request.ts` 对普通请求有一套完整的令牌续期：4012 → 刷新 → 重放原请求。`streamChat()` **不复用这套**，因为：
+
+1. **重放一条已经在流的请求语义可疑**：已经吐出去的 delta 怎么办？重放会让用户看到重复内容。
+2. **实现成本高**：要在 `fetch` 层重做「暂停流 → 刷新 → 用新 token 重新发起 → 丢弃旧流的后续数据」。这是一整套状态机，不是本支该顺手塞进来的。
+3. **它的发生概率在本支是零**：Mock 通道下根本不存在 token 校验。
+
+**本支的处理**：`streamChat()` 收到 **4010 / 4011 / 4012 时，直接走与 `request.ts` 相同的失败路径**——抛 `ApiError`，由调用方（`ChatView`）提示「登录已失效，请重新登录」。**如实记为缺口**，写进 spec §5.2 待复验项。
+
+> 真要做的时间点是**后端 SSE 就位之后**：那时才知道刷新请求能否与进行中的流并存，现在设计等于猜。
+
+### 3.8 打字机的「临时消息」怎么管理
+
+流式渲染有个状态管理问题：**AI 的回复不是一次性到来的**。做法是：
+
+1. 用户点发送 → 立刻**乐观更新**：往列表 push 一条 `role: 'user'` 的消息（不等后端，否则输入后有一段无反馈的空窗）。
+2. 同时 push 一条**占位的 AI 消息**，`content: ''`，并记下它在数组里的 id（用一个本地生成的临时 id，如 `temp-<时间戳>`）。
+3. 每个 `delta` 到达 → 找到那条占位消息，`content += text`。Vue 的响应式会自动重渲染。
+4. `done` 到达 → 把占位消息的临时 id 换成后端给的 `messageId`。
+
+**为什么不用一个 `streamingText` 变量、结束后再 push 成消息**：那样消息列表与「正在流的内容」是两套东西，滚动定位、气泡样式、回车禁用都要写两遍。放进同一个列表里，**渲染逻辑只有一套**。
+
+**`isNudge` 的处理**（契约 §5）：主动消息注入时 `role` 仍是 `user`，但**不是用户打的字**。所以气泡的渲染判据**不能只看 `role`**——要 `role === 'user' && !isNudge` 才算「我发的」。本支按 [MEMBER_2_FRONTEND §3](../../dev/MEMBER_2_FRONTEND.md) 的说法处理：就把它当一条普通 AI 消息渲染，用 `isNudge` 做一点视觉区分（如浅色底）。
+
+### 3.9 未读红点为什么不做成「独立功能」
+
+[MEMBER_2_FRONTEND §3](../../dev/MEMBER_2_FRONTEND.md) 讲得很直接：
+
+> 该人设有未读的主动消息时，名字旁显示红点，打开后清除（**日程提醒到点后也是一条普通消息，红点逻辑直接复用，不用为它加分支**）
+
+所以红点是 **store 里的一个字段**（`Map<personaId, boolean>` 或给每个人设加 `hasUnread`），不是一套消息类型系统。要抵制的诱惑：给它设计 `type: 'unread'`、给它单独的事件、给它独立的接口——**都不需要**。本支只做「有/无」两态。
+
+> 主动消息的后端（`/proactive/trigger`、定时任务）本支完全不碰，红点在本支只有 Mock 数据能触发。
+
+### 3.10 为什么这支不拆成两支（对 AGENTS §6 的偏离说明）
+
+[AGENTS §6](../../../AGENTS.md) 约定「一支 = 一功能 = 3-8 文件」，本支 10 个源文件**超了**。为什么不拆：
+
+**能拆的方案**：先一支做「SSE 解析 + Mock + store」（无 UI），再一支做「界面」。**不采纳**，三条理由：
+
+1. **第一支没有可验证的判据。** 拆出来的「解析层」只能靠单测证明——而本项目前端**没有测试框架**（`package.json` 里没有 vitest/jest，只有 `vue-tsc` 和 `vite build`）。那么第一支的验收只能是「typecheck 通过」，这等于什么都没验。
+2. **解析逻辑的正确性只能在界面上看出来。** 「逐字出现」是唯一有说服力的证据；`delta` 拼接、半行切分、`error` 落 UI——这些缺陷全都是**视觉可见、类型不可见**的。分开做会得到一个「类型全对但行为全错」的中间态。
+3. **Week 2 生死线就在本周。** 今天是 Tuesday，Week 2 只剩 5 天（[MASTER §7](dev/MASTER.md)）。拆成两支要走两轮 PR + AI 审计，时间成本换不到任何质量收益。
+
+**补偿措施**：把规模换来的风险用**更细的自查清单**抵掉——spec §5.1 列了 13 条可本机验证的项，其中「人为注入 error」「把 delta 从中间切开」两条是本支专属的**破坏性验证**，专门用来覆盖最容易偷工减料的地方。
+
+---
+
+## 4. 风险与对策
+
+| 风险 | 影响 | 对策 |
+|------|------|------|
+| 后端 SSE 未交付，`ai-service/` 目录都不存在 | 真实通道完全无法验证 | 走 Mock 通道；spec §5.1（本机可验）与 §5.2（待后端）**分列，不混勾** |
+| **Mock 通过 ≠ 真实能通** | 最坏情况：Mock 给了虚假信心，后端就位才发现字段/事件名对不上 | §3.5：Mock **复用真实解析函数**、走真 `ReadableStream`；Mock 的 `data` 结构直接照契约 §6 抄，不自创 |
+| 半行解析写错 | 偶发乱码 / JSON 解析崩溃，且难以复现 | §3.2 的 buffer + `{ stream: true }`；Mock 提供**分片配置**做破坏性验证（spec §5.1） |
+| `error` 事件被静默吞掉 | 用户看到「回复卡住不动」，无任何提示 | spec §4.3 硬约束 + §5.1 专项验证（人为注入 `error`） |
+| 把 `emotionLabel` 渲染出来 | 违反契约 §5 的「内部信号不上界面」，答辩时被追问会很尴尬 | spec §2.2 明确排除；**类型定义里干脆不留这两个字段**（从源头杜绝） |
+| 越过边界改了成员 3 的文件 | 与 `views/persona/` 等产生冲突 | spec §2.2 列出不属于本支的目录；侧栏只读人设、不提供增删改 |
+| 未登录时流的 401 处理不完整 | 用户卡在一个永远不动的流上 | §3.7 如实记为缺口，spec §5.2 待复验；先做「提示 + 引导重新登录」 |
+| 本支文件数超 AGENTS §6 约定 | 审计时被质疑范围失控 | §3.10 写明偏离理由 + 补偿措施，主动在 PR 描述里说明 |
+| `VITE_USE_MOCK` 开关误留 `true` 提交 | 生产环境跑 Mock 数据 | `.env.example` 里默认写 `false`；开关只写进 `.env`（不入库） |
+
+---
+
+## 5. 进度记录
+
+| 日期 | 步骤 | 说明 |
+|------|------|------|
+| 2026-09-22 | 1 | 写 `spec.md` + `plan.md`；分支自 `develop`（`b05a311`）切出 |
