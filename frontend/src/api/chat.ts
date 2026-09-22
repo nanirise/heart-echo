@@ -1,13 +1,16 @@
 import { useAuthStore } from '@/stores/auth'
-import { ApiError } from '@/api/request'
+import { ApiError, request } from '@/api/request'
 import { ErrorCode } from '@/types/errcode'
 import type {
+  ChatMessage,
   StreamChatPayload,
   StreamChatHandlers,
   DeltaPayload,
   DonePayload,
   ErrorPayload,
 } from '@/types/chat'
+
+import type { PageResult } from '@/types/api'
 
 const baseURL = import.meta.env.VITE_API_BASE_URL
 
@@ -73,6 +76,20 @@ export async function streamChat(
   } finally {
     reader.releaseLock()
   }
+}
+
+export async function getMessages(
+  personaId: number,
+  page = 1,
+  pageSize = 20,
+): Promise<ChatMessage[]> {
+  const result = await request.get<PageResult<ChatMessage>>(
+    `/chat/personas/${personaId}/messages`,
+    { params: { page, pageSize } },
+  )
+
+  // 后端倒序返回（最新在前），界面需要「旧 → 新」，在请求层翻转
+  return result.list.slice().reverse()
 }
 
 function pickField(chunk: string, field: string): string | null {
