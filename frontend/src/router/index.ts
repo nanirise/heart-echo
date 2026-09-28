@@ -36,7 +36,12 @@ const routes: RouteRecordRaw[] = [
         props: true,
         meta: { title: '对话' },
       },
-      { path: 'personas', name: 'Persona', component: Placeholder, meta: { title: '人设管理' } },
+      {
+        path: 'personas',
+        name: 'Persona',
+        component: () => import('@/views/persona/PersonaView.vue'),
+        meta: { title: '人设管理' },
+      },
       { path: 'profile', name: 'Profile', component: Placeholder, meta: { title: '用户画像' } },
       { path: 'moments', name: 'Moments', component: Placeholder, meta: { title: '朋友圈' } },
       { path: 'schedules', name: 'Schedule', component: Placeholder, meta: { title: '日程提醒' } },
