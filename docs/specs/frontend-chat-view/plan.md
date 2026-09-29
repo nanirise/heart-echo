@@ -256,3 +256,6 @@ Mock 数据本身要覆盖几种边界：**3 个人设**（侧栏切换）、**�
 | 2026-09-22 | 1 | 写 `spec.md` + `plan.md`；分支自 `develop`（`b05a311`）切出 |
 | 2026-09-27 | — | `types/chat.ts`、`api/chat.ts`（抽出 `consumeStream` / `toChronological`）、`api/mock/{chat,index}.ts` 完成 |
 | 2026-09-29 | — | rebase 到 `751e8c3`（PR #47 合并后）；`api/mock/persona.ts` 取代本地 `MockPersona`；`stores/chat.ts` 完成，§3.8 临时 id 方案订正为负数计数器 |
+| 2026-09-29 | 5 | `components/chat/{TypingIndicator,MessageBubble,ChatInput}.vue`、`views/chat/ChatView.vue` 完成；`router/index.ts` L35 接入 `ChatView`；本机经 Mock 通道实测**跑通** |
+
+> 本机实测使用**手动写入的假登录态**（浏览器 Console 写 localStorage，key `heart-echo-auth`）——原因是本机无后端在跑（`localhost:8080` 无监听），而 `VITE_USE_MOCK` 只覆盖 `chatApi` 与 `listPersonas` 两个出口，**不含 `auth`**。这是本机调试手段，不代表跳过鉴权；验收清单中依赖真实响应头的项（spec §5.2）不受此影响。

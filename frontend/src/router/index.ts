@@ -32,7 +32,7 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'chat/:personaId?',
         name: 'Chat',
-        component: Placeholder,
+        component: () => import('@/views/chat/ChatView.vue'),
         props: true,
         meta: { title: '对话' },
       },
