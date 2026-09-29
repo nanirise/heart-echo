@@ -1,8 +1,14 @@
-import * as real from '@/api/chat'
-import * as mock from '@/api/mock/chat'
+import * as realChat from '@/api/chat'
+import * as realPersona from '@/api/persona'
+import * as mockChat from '@/api/mock/chat'
+import * as mockPersona from '@/api/mock/persona'
+
+const useMock = import.meta.env.VITE_USE_MOCK === 'true'
 
 // 开关只在这一个地方判断，业务代码永远 import 这个出口
-export const chatApi = import.meta.env.VITE_USE_MOCK === 'true' ? mock : real
+export const chatApi = useMock ? mockChat : realChat
 
-export { MOCK_PERSONAS } from '@/api/mock/chat'
-export type { MockPersona } from '@/api/mock/chat'
+// 拿真实实现的签名给 Mock 当模板：两边一旦漂移，typecheck 立刻报错
+export const listPersonas: typeof realPersona.listPersonas = useMock
+  ? mockPersona.listPersonas
+  : realPersona.listPersonas

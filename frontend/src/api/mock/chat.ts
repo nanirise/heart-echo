@@ -2,22 +2,6 @@ import { consumeStream, toChronological } from '@/api/chat'
 import type { ChatMessage, StreamChatHandlers, StreamChatPayload } from '@/types/chat'
 
 /**
- * 侧栏用的人设列表。
- * 本支只负责「列出 + 切换」，人设的增删改归成员 3；完整人设接口交付后换成 api/persona.ts。
- */
-export interface MockPersona {
-  id: number
-  name: string
-  avatarUrl: string | null
-}
-
-export const MOCK_PERSONAS: MockPersona[] = [
-  { id: 1, name: '小雨', avatarUrl: null },
-  { id: 2, name: '阿哲', avatarUrl: null },
-  { id: 3, name: '林医生', avatarUrl: null },
-]
-
-/**
  * 故意按固定长度切字节，而不是按事件块切。
  * 17 是质数，能保证切点落在「事件块内部」和「汉字的三字节中间」——
  * 这两处正是 consumeStream 最容易错的地方，必须让它们在 Mock 下真的被跑到。

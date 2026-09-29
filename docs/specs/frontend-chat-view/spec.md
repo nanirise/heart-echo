@@ -7,7 +7,7 @@
 |----|-----|
 | 分支 | `feature/frontend-chat-view` |
 | 状态 | 🚧 进行中 |
-| 依赖分支 | 无（`develop` `b05a311` 切出） |
+| 依赖分支 | `develop` `751e8c3`（2026-09-29 rebase；原从 `b05a311` 切出） |
 | 关联契约 | [API_CONTRACT](../../API_CONTRACT.md) §5 / **§6（🔒 已冻结）** / §4 |
 | 关联设计 | [TECH_DESIGN](../../TECH_DESIGN.md) §3 |
 | 后端依赖 | `chat-message` 的 SSE 实现 —— **未交付**（`ai-service/` 目录尚不存在） |
@@ -40,6 +40,7 @@ Week 1 交付了「人的入口」（登录/注册页），但**进来之后没�
 | `frontend/src/api/chat.ts` | 新增 · `streamChat()`（SSE 解析）+ `getMessages()`（历史消息） |
 | `frontend/src/api/mock/chat.ts` | 新增 · 与 `chat.ts` **同签名**的 Mock 实现 |
 | `frontend/src/api/mock/index.ts` | 新增 · 按 `VITE_USE_MOCK` 决定导出真实实现还是 Mock |
+| `frontend/src/api/mock/persona.ts` | 新增 · `listPersonas` 的 Mock（与成员 3 的真实实现**同签名**，含分页壳）；侧栏人设列表的来源 |
 | `frontend/src/stores/chat.ts` | 新增 · 消息列表、发送、打字机拼接、未读红点 |
 | `frontend/src/views/chat/ChatView.vue` | 新增 · 对话页（人设侧栏 + 消息区 + 输入框） |
 | `frontend/src/components/chat/MessageBubble.vue` | 新增 · 消息气泡（区分 user / assistant / nudge） |
@@ -49,7 +50,7 @@ Week 1 交付了「人的入口」（登录/注册页），但**进来之后没�
 | `frontend/src/router/index.ts` | 修改 · `chat/:personaId?` 的 `component` 由 `Placeholder` 换成真实懒加载 import |
 | `docs/specs/frontend-chat-view/{spec,plan}.md` | 新增 · 本文与实施计划 |
 
-合计 **10 个源文件**（9 新增 + 1 修改）+ 2 篇文档。
+合计 **11 个源文件**（10 新增 + 1 修改）+ 2 篇文档。
 
 > ⚠️ 本支规模**超出** [AGENTS §6](../../../AGENTS.md) 约定的「3-8 文件」。理由与拆分考量见 `plan.md` §3.10；结论是**不拆**（拆分会让「能跑通」这个判据失去意义）。
 
@@ -57,6 +58,7 @@ Week 1 交付了「人的入口」（登录/注册页），但**进来之后没�
 
 - ❌ **人设的增删改** → 成员 3 的人设页。本支侧栏**只负责列出人设与切换**，一个新增/删除按钮都不放
 - ❌ `api/persona.ts` / `stores/persona.ts` → 人设接口归成员 3（[MEMBER_2_FRONTEND §0](../../dev/MEMBER_2_FRONTEND.md) 边界表）
+  - ⚠️ **唯一例外**：本支在 `api/mock/persona.ts` 复刻一份 `listPersonas` 的 Mock（**只读，不碰增删改**）。理由有二：① 本项目本机无 PG，真实 `GET /personas` 跑不起来，而侧栏必须能列出人设；② 走 `api/mock/index.ts` 的统一开关，`VITE_USE_MOCK=false` 时自动切回成员 3 的真实实现，**调用方代码一行不改**
 - ❌ **Markdown 渲染与代码高亮** → 需引入新依赖（`marked` + `highlight.js`），而本支要求「不引入新依赖」。先用纯文本 + `white-space: pre-wrap` 展示，Markdown 化留到 Week 4 UI 分支
 - ❌ 情绪相关任何处理 → 契约 §5 明确 `emotionLabel` / `emotionScore` 是**内部信号**，UI 不展示；本支**连类型都不为它们留字段**
 - ❌ 日程提醒的特殊消息类型 → [MEMBER_2_FRONTEND §7](../../dev/MEMBER_2_FRONTEND.md)：到点的提醒就是一条普通 AI 消息，**不要新增 `type: 'reminder'`**
@@ -79,6 +81,7 @@ Week 1 交付了「人的入口」（登录/注册页），但**进来之后没�
 | `stores/auth.ts` | ✅ 已合并（PR #24） |
 | 路由 `chat/:personaId?` 占位与 `MainLayout` | ✅ 已合并（PR #31） |
 | `VITE_USE_MOCK` 的 TS 声明 | ✅ 已在 `vite-env.d.ts:13` |
+| `types/persona.ts` + `api/persona.ts`（`listPersonas`） | ✅ 已合并（PR #47，`751e8c3`）；本支 rebase 后可用 |
 | 后端 `POST /chat/stream`、`GET /chat/.../messages` | ❌ **未交付**（`ai-service/` 不存在）→ 见 §5 |
 | 后端 `GET /personas` | ⚠️ 代码已合并，但**本机无 PG，跑不起来** → 侧栏同样走 Mock |
 
@@ -121,7 +124,8 @@ Week 1 交付了「人的入口」（登录/注册页），但**进来之后没�
 - [ ] `npm run typecheck`（`vue-tsc --noEmit`）零错误
 - [ ] `npm run build` 通过
 - [ ] `VITE_USE_MOCK=true` + `npm run dev` 启动，访问 `/chat` 不再是「待实现」
-- [ ] 侧栏列出人设（Mock 提供 3 个），点击可切换；切换后消息区内容随之改变
+- [ ] 侧栏列出人设（`MOCK_PERSONAS` 3 条，字段与契约 §4 一致），点击可切换；切换后消息区内容随之改变
+- [ ] Mock `listPersonas` 返回 `PageResult<Persona>`（`list` / `total` / `page` / `pageSize` 四字段齐全），与成员 3 的真实实现同签名
 - [ ] 输入文字 + Enter → 用户消息立即上屏（乐观更新），随后 AI 回复**逐字出现**
 - [ ] 首个 `delta` 到达前显示 `TypingIndicator` 等待态
 - [ ] 流结束后消息留在列表，输入框恢复可用
@@ -148,3 +152,4 @@ Week 1 交付了「人的入口」（登录/注册页），但**进来之后没�
 | 日期 | 版本 | 变更内容 | 改动人 |
 |------|------|----------|--------|
 | 2026-09-22 | v1 | 初始版本 | 成员 2 |
+| 2026-09-29 | v2 | rebase 到 `751e8c3`（PR #47 合并后）；新增 `api/mock/persona.ts`（侧栏人设列表的 Mock，与成员 3 的 `listPersonas` 同签名）；源文件数 10 → 11 | 成员 2 |
