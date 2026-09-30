@@ -1,7 +1,7 @@
 # plan · 认证与用户（auth-login）
 
 > 对应 spec：[spec.md](spec.md) ｜ 分支：`feature/auth-middleware` → `feature/auth-register-login` → `feature/auth-profile`
-> 负责人：成员 1 ｜ 最后更新：2026-09-18
+> 负责人：成员 1 ｜ 最后更新：2026-09-30
 
 ---
 
@@ -27,7 +27,7 @@
 |---|---|---|---|---|
 | **A** | `feature/auth-middleware` | spec + Step 1 | 本 spec/plan + JWTAuth 实装 + 单测 | ✅ **已合并（PR #34）** |
 | **B** | `feature/auth-register-login` | Step 2–4、6（部分） | register / login / refresh 三个端点的 dto + repo + service + handler + 挂载 | ✅ **已合并（PR #45）** |
-| **C** | `feature/auth-profile` | Step 3–6（其余） | `GET`/`PUT /user/profile`、`PUT /user/password` | 🔶 代码完成、`go test ./...` 全绿、**端到端冒烟通过**（2026-09-30）；待开 PR |
+| **C** | `feature/auth-profile` | Step 3–6（其余） | `GET`/`PUT /user/profile`、`PUT /user/password` | ✅ **已合并（PR #50，2026-09-30）** |
 
 **切分判据**：一个 PR = 一件**能独立验证、能单独 review** 的事。
 
@@ -157,3 +157,4 @@ type UpdateProfileReq struct {
 | 2026-09-30 | **PR C 代码完成**：Step 3 补 `UpdateProfile` / `UpdatePassword`、Step 4 补 profile / 改密三件套、Step 5 补后 3 个 handler + `RegisterUserRoutes`、Step 6 挂 `protected` 组（`router.go`，与成员 3 的 persona 路由同组）。新增 `internal/handler/auth_handler_test.go` 承接「handler 拿到请求之后怎么解析」这一类测试（`router_test.go` 只管路由装配，两者的分工写进了各自的文件头） | — |
 | 2026-09-30 | **端到端冒烟通过**，Step 7 完成，spec §5 全勾。本机原生 PG 16 + `go run ./cmd/server`，约 30 条请求含 20 多条负例，日志 0 ERROR / 0 500。**PR B 当时欠的"未端到端验证"补上了** | 无（阻塞已解） |
 | 2026-09-30 | Step 5 的偏差：`PUT /user/profile` 改用严格解码（`bindStrictJSON`），请求体出现 `username` / `avatarUrl` 以外的键返回 `4001`。原因见契约 §3.5——它是全项目唯一的"部分更新"接口，宽松解码会让"拼错字段名"和"什么都没改"返回同样的 `200 保存成功` | 契约行为变更，**待广播** |
+| 2026-09-30 | **PR C 已合并（PR #50）**，本 plan 的 Step 1–7 全部结束，auth-login 整条链路交付完毕 | 无 |

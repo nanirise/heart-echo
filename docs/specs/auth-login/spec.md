@@ -1,7 +1,7 @@
 # spec · 认证与用户（auth-login）
 
 > 功能名：auth-login ｜ 分支：`feature/auth-middleware` → `feature/auth-register-login` → `feature/auth-profile`（跨多个分支交付，PR 划分见 [plan §1.1](plan.md#11-pr-划分)）
-> 负责人：成员 1 ｜ 状态：已定稿（2026-09-18 审核通过；PR A / B 已合入 `develop`，PR C 代码完成并**通过端到端冒烟**，见 §5.2）
+> 负责人：成员 1 ｜ 状态：已定稿（2026-09-18 审核通过；**PR A / B / C 均已合入 `develop`**——PR #34 / #45 / #50，PR C 另于 2026-09-30 通过端到端冒烟，见 §5.2）
 > 创建：2026-09-18 ｜ 最后更新：2026-09-30
 > 关联：[接口契约 §3](../../API_CONTRACT.md) ｜ [开发总纲 §3 / §4.2](../../dev/MASTER.md) ｜ [成员 1 开发文档 §2](../../dev/MEMBER_1_BACKEND_AI.md) ｜ [技术文档 §4.7 / §4.8](../../TECH_DESIGN.md) ｜ [backend-skeleton spec §2.2](../backend-skeleton/spec.md)
 
@@ -172,6 +172,7 @@
 | 2026-09-18 | 创建（草稿） | 承接 backend-skeleton §2.2 的移交；Week 1 里程碑 |
 | 2026-09-30 | §5.1 / §5.2 / §5.3 全部条目勾上；§5.2 新增两条（清空 `avatarUrl`、严格解码）；补上实测环境与「勾到具体断言」的说明 | 本机 PostgreSQL 16 就位，PR C 的端到端冒烟跑通。**§5.2 原先"在 PG 就位前不勾"的前提消失**，那份免责说明不能再留着 |
 | 2026-09-30 | §5.2 新增 `PUT /user/profile` 严格解码一条 | 该端点的请求体处理策略当天变了（契约 §3.5），spec 的验收清单得跟上 |
+| 2026-09-30 | 头部状态行改为「PR A / B / C 均已合入 `develop`」 | PR C（#50）当天合并；原先只写到「代码完成 + 冒烟通过」，状态落后于事实 |
 
 ## 7. 待确认（定稿前清空）
 

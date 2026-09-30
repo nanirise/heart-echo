@@ -6,12 +6,22 @@
 - 在做：**Week 1 完成**（2026-09-21 实测通过）。总纲 §7 给 Week 1 定的验收项「与成员 2 前后端联调成功」达成——PR B 合并后一直欠着的那一步补上了，五条都在浏览器里跑通：① 注册后直接进 `/chat` ② **F5 刷新仍保持登录态**（从 localStorage 的 `heart-echo-auth` 恢复，这是 Week 1 唯一的真验收项）③ 换隐身窗口走 `/login` 能进 ④ 密码错 → `4013`、重复用户名 → `4004` ⑤ 后端访问日志里能看到 `POST /api/v1/auth/register` 真的打进来
   联调环境（**本机，不入库**）：原生 **PostgreSQL 16**，不走 Docker。**库名、账号、密码三样都是 `heart`**；`backend/.env` / `frontend/.env` 由各自 `.env.example` 复制后改值——**注意本地 `DB_USER`/`DB_NAME` 是 `heart`，不是模板里的 `heart_echo`**。`.env` 不入库，各人本地自成一套，照抄模板去连库会连错
   踩到一个 PostgreSQL 15+ 的行为变化，记一笔：**普通角色在 `public` schema 建表会被拒（`SQLSTATE 42501`）**。Docker 的 postgres 镜像把 `POSTGRES_USER` 建成超级用户，所以撞不到；原生装法用的是普通角色，必须补一句 `ALTER SCHEMA public OWNER TO heart;`（在该库内执行）。**成员 3** 若也用原生 PG 跑 schema 核对，会卡在这一步
-  **PR C 代码已完成、尚未提交**（分支 `feature/auth-profile`，改动都在工作区）：`dto`（3 个请求体 + 1 个响应体 + `ParseAvatarURL` 三态）、`repository`（`UpdateProfile` / `UpdatePassword`）、`service`（`GetProfile` / `UpdateProfile` / `ChangePassword`）、`handler`（3 个 handler + `RegisterUserRoutes`）、`router.go` 挂载，另加 dto / service / 路由三层测试。`go build` / `go vet` / `go test ./...` 全绿。**文档清理已做完**（spec §5 全勾 + 变更记录 + 待确认第 3 条划掉、plan 步骤 2–7 与 PR 划分表更新、§3.6 新增"为什么要严格解码"）。**尚欠**：rebase 到 `develop`（落后 11 个提交）→ 开 PR
+  **PR C 已合并（PR #50，2026-09-30）——Week 1 到此全部结束，auth-login 整条链路交付完毕**。分支 `feature/auth-profile` 的 tip `6ea7d3c` 已在 `origin/develop` 里（合并点为 `40fc87a`）。7 个 commit，13 文件 +1052/−62。改动：`dto`（3 个请求体 + `ProfileResponse` + `ParseAvatarURL` 三态）、`repository`（`UpdateProfile` / `UpdatePassword`）、`service`（`GetProfile` / `UpdateProfile` / `ChangePassword`）、`handler`（3 个 handler + `RegisterUserRoutes` + `bindStrictJSON` + 新文件 `auth_handler_test.go`）、`router.go` 挂 `protected` 组。文档清理已完成（spec §5 全勾、plan 步骤 2–7 与 PR 划分表更新、plan §3.6 新增「为什么要严格解码」）。
   **端到端冒烟已跑通（2026-09-30，原生 PostgreSQL 16 + 真后端）**：六个端点全打了一遍，约 30 条请求含 20 多条负例，后端日志 **0 个 ERROR / 0 个 500 / 0 个 panic**（WARN 全是故意的负例）。逐条核对通过：注册响应形状（3 个顶层字段 + user 4 字段、不含 `passwordHash`）；`4010` / `4011`×2 三条鉴权负例；`{"avatarUrl":null}` **真的把库里的 `avatar_url` 清成了 NULL**（这条最要紧——GORM 的 `Updates(struct)` 会跳过零值，只有 map 才清得掉）；`{}` 不改任何东西；`4004` / `4003` / `4015` / `4001` 各边界；改密后老密码 `4013`、新密码 `200`（证明真落库）；refresh 换回的令牌里 `uname` 是**改名后**的名字，不是注册时的旧名（`auth_service.go` 那句「回查一次库取当前值」确实生效）。库里对账：`password_hash` 是 `$2a$10$` 开头、长度 60
   **冒烟中改了 `PUT /user/profile` 的解码策略（队长 2026-09-30 拍板"严格模式"）**：新增 `handler.bindStrictJSON`，请求体出现 `username` / `avatarUrl` 以外的键返回 `4001`（原为静默忽略并 200）。用一个"不认识的字段名 + 只改用户名（合法）+ 太短（校验仍在跑）"五条的对照测试钉住，并做了**两步反向注入**验证（去掉 `DisallowUnknownFields` → 恰好前两条红；去掉 `ValidateStruct` → 恰好"太短"那条红），活体 7 条用例与测试一致。**已写进契约 §3.5 + §12，需要广播给成员 2**（他们的 `ProfileView` 尚未开始写，时机赶得上）
-- 下一步：① **收尾 PR C**——冒烟 ✅、文档清理 ✅，剩 **rebase 到 `develop`（落后 11 个提交）→ 开 PR → 合**。已核过冲突面：`git diff --name-only HEAD...origin/develop` 改的全是前端 + 几个 spec/plan，**与我改的文件交集为空**，rebase 不会冲突；② 写 **SSE 的 spec**——`docs/specs/chat-message/spec.md` 把 `POST /chat/stream` **明确排除在范围外**并标注「成员 1 的 Week 2 生死线」，所以这条链路的 spec **目前不存在**；按 §2.1（新增接口 + 跨模块）必须先有 spec，功能名待定；③ 落 `chat-message` 的仓储层——`dto/chat_dto.go`、`repository/message_repo.go`、`service/chat_service.go`、`handler/chat_handler.go` **四个文件都不存在**，而 `chat-message/spec.md` 的文件归属表里写着归我，且它是 SSE 落库的**硬前置**（spec 原话：不先做，SSE 会顺手自己写一份 INSERT，两套写法必然对不上）；④ 最后才是 SSE 全链路 + `ai-service/`（整个目录尚未创建）
+- 下一步（**按优先级**）：
+  1. **[队长手动] 广播契约 §12 两条新行**（严格解码、SSE 事件分隔符）。这是**唯一剩余的手动收尾**。严格解码那条**有时效**——成员 2 的 `ProfileView` 还没开始写，现在说来得及；晚了他会照宽松解码写，然后发现 PUT 整个 user 对象返回 `4001`。
+  2. **写 SSE 的 spec** —— `docs/specs/chat-message/spec.md` 把 `POST /chat/stream` **明确排除在范围外**并标注「成员 1 的 Week 2 生死线」，所以这条链路的 spec **目前不存在**；按 §2.1（新增接口 + 跨模块）必须先有 spec，功能名待定（建议 `chat-stream`）。要先问「要什么 / 为什么 / 边界」再落笔。
+  3. **落 `chat-message` 的仓储层** —— `dto/chat_dto.go`、`repository/message_repo.go`、`service/chat_service.go`、`handler/chat_handler.go` **四个文件都不存在**，而 `chat-message/spec.md` 的文件归属表里写着归我，且它是 SSE 落库的**硬前置**（spec 原话：不先做，SSE 会顺手自己写一份 INSERT，两套写法必然对不上）。
+  4. **SSE 全链路 + `ai-service/`** —— `ai-service/` 整个目录尚未创建（`main.py` / `api/routes.py` / `core/config.py` / `core/llm_client.py` / `agents/dialogue_agent.py`）。这是 Week 2 生死线本体。
+  
+  > **排期提示**：总纲 §7 写「Week 2 生死线（流式对话）若失守，立即砍掉记忆系统与主动消息」。以 2026-09-30 为基准，第 1 步（广播）当天可结，**第 2–4 步（SSE 全链路）是第一优先级**，Week 3/4 的内容（情绪分类、记忆 Agent、画像、ChromaDB）在生死线落地前**不要开工**。
+  >
+  > **工作量估计（2026-09-30 评估，按每天 3–5h 有效时间）**：Week 2 剩余 20–30h（4–7 天）；Week 3 约 20–30h；Week 4 约 15–25h；**合计 55–85h ≈ 2.5–4 周**。其中**生死线最小路径**（只做 ai-service 的 `main.py` + `llm_client` + 一个能流的 `/chat/stream`，不碰 agent / 分类器 / 记忆）**12–18h、3–4 天**，排错占三分之一。最大不确定项是 SSE 联调——「字到了不刷新 / 一次性吐完 / 被中间件缓冲住」这类问题只能真跑起来才看得见。
+  >
+  > **动手前必须先读的**：成员 2 的前端 SSE 消费端（`frontend/src/api/chat.ts`、`stores/chat.ts`、`types/chat.ts`）**已合入 develop**，意味着事件名 / data 结构 / 分隔符**已经被他写死**。这不是能自由设计的部分——写 spec 前先把格式反向对出来，要改就是跨模块变更，得广播。
 - ★ **遗留待补（2026-09-19 已知未做，下次改）**：
-  1. `docs/specs/auth-login/spec.md` 未收尾：§5.1 的 8 个验收勾、§6 变更记录加一行、§7 待确认第 2 条（广播）、头部状态行补「PR A 已合并」
+  1. ~~`docs/specs/auth-login/spec.md` 未收尾：§5.1 的 8 个验收勾、§6 变更记录加一行、§7 待确认第 2 条（广播）、头部状态行补「PR A 已合并」~~ —— **2026-09-30 已完成**：§5.1 / §5.2 / §5.3 全部勾上，§6 补两行变更记录，§7 第 3 条划掉、第 2 条（广播）保留为未决，头部状态行改为「PR A / B 已合入 develop，PR C 代码完成并通过端到端冒烟」。plan.md 同步（步骤 2–7 全 ✅、PR 表、§3.6 新增、§5 进度三行、文件清单加 `auth_handler_test.go`）
   2. `docs/API_CONTRACT.md` §12 的「已广播」列**仍全为 ⬜**、§13 三方冻结签署仍空白。**队长 2026-09-19 判定这两条「算通过」，文档尚未同步**——不改的话以后没人说得清
   3. `deploy/.env.example` 缺失；`backend/.env.example` 里 `MOMENT_JOB_INTERVAL` / `PROACTIVE_JOB_INTERVAL` 只有一行占位注释、变量本身没有（MASTER §3 #4b，成员 3 的活）
   4. `ai-service/` 目录**不存在**，`SCHEDULE_PARSE_BACKEND` 无从落地（MASTER §3 #4c）
@@ -124,7 +134,7 @@
 - 有（2026-09-21 新增，**不是接口变更，是范围冻结，但成员 3 要看**）：
   - 决定了什么：**流式对话做真流式（SSE），不做伪流式**。`POST /chat/stream` 按 `docs/API_CONTRACT.md` §6 实现（那份契约已冻结，前端成员 2 早已按它写好了消费端）。**负责人：成员 1**（`docs/specs/chat-message/spec.md` 里这条本就分给我）
   - 为什么现在定：`chat_service` / `message_repo` / `chat_handler` 和 `ai-service/` **一行都还没写**——这是最后能低成本改口的时刻；再往后就是返工。且总纲 §10「🚫 绝不砍」清单里就有「流式对话」
-  - 涉及文件（**将来要新增，现在都还不存在**）：`backend/internal/handler/chat_handler.go`、`backend/internal/service/chat_service.go`、`backend/internal/repository/message_repo.go`、`backend/internal/client/ai_client.go`、`ai-service/`（整个目录尚未创建）
+  - 涉及文件（**将来要新增，现在都还不存在**）：`backend/internal/handler/chat_handler.go`、`backend/internal/service/chat_service.go`、`backend/internal/repository/message_repo.go`、`backend/internal/service/ai_client.go`、`ai-service/`（整个目录尚未创建）
   - 其他人要做什么：**成员 3**——`chat_messages` 表是你建的，若你原计划里有「伪流式」的中间态（比如先整段返回再切片）请停手，通道语义要对齐 SSE；**成员 2**——无动作，前端按契约 §6 写的实现就是对的，这次是后端跟上
 - 有（2026-09-30 新增，**HTTP 契约补充，只影响尚未实现的 SSE 服务端**）：
   - 改了什么：`docs/API_CONTRACT.md` §6 补一句——**事件块之间以 `\n\n` 分隔，不使用 `\r\n\r\n`**，服务端必须输出 `\n\n`，客户端不要求做归一化。原 §6 只给了事件流示例、从未约定分隔符
