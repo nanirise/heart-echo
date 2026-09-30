@@ -100,6 +100,61 @@ func (r *UserRepo) FindByEmail(ctx context.Context, email string) (*model.User, 
 	return &u, nil
 }
 
+// ProfileUpdate 描述一次对 users 行的部分更新，nil 字段表示"不动这一列"。
+//
+// AvatarURL 的"改不改"必须由 SetAvatar 单独表达，不能只看指针是否为 nil：
+// 指针分不开「不改」和「改成 NULL（清空头像）」——这两种都是 nil，
+// 而契约 §3.5 明确要求后者可用。这与 dto.UpdateProfileRequest.ParseAvatarURL
+// 返回的 (value, present) 是一一对应的。
+type ProfileUpdate struct {
+	Username  *string
+	AvatarURL *string
+	SetAvatar bool
+}
+
+// UpdateProfile 部分更新 users 行，撞唯一索引时返回 ErrDuplicateUsername。
+//
+// 用 map 而不是 struct 传值：GORM 的 Updates(struct) 会**跳过零值字段**，
+// 而清空头像要写的恰恰是一个零值（NULL）。用 map 才能把"要写成 NULL"表达出来，
+// 用 struct 的话那一列会被静默跳过——用户点清空头像没反应，且不报任何错。
+func (r *UserRepo) UpdateProfile(ctx context.Context, id uint64, u ProfileUpdate) error {
+	updates := map[string]any{}
+	if u.Username != nil {
+		updates["username"] = *u.Username
+	}
+	if u.SetAvatar {
+		// 这里的 nil 是有意义的：它会让 GORM 写 SET avatar_url = NULL
+		updates["avatar_url"] = u.AvatarURL
+	}
+	if len(updates) == 0 {
+		return nil // 两个字段都没传，不发这句 UPDATE
+	}
+
+	err := r.db.WithContext(ctx).
+		Model(&model.User{}).
+		Where("id = ?", id).
+		Updates(updates).Error
+	if err == nil {
+		return nil
+	}
+	if dup := translateUniqueViolation(err); dup != nil {
+		return dup
+	}
+	return err
+}
+
+// UpdatePassword 覆写密码哈希，只动 password_hash 一列。
+//
+// 不做 translateUniqueViolation：password_hash 上没有唯一索引，
+// 这里唯一可能撞的是主键，那不是业务冲突。
+// 调用方（改密码）前面必有一次 FindByID，所以"id 不存在"不会走到这里。
+func (r *UserRepo) UpdatePassword(ctx context.Context, id uint64, passwordHash string) error {
+	return r.db.WithContext(ctx).
+		Model(&model.User{}).
+		Where("id = ?", id).
+		Update("password_hash", passwordHash).Error
+}
+
 // translateUniqueViolation 把 PostgreSQL 的唯一约束冲突翻译成哨兵错误。
 // 不是唯一冲突、或约束名不认识时返回 nil，由调用方按普通数据库错误处理
 // （认不出来时宁可退成 5003，也不能猜错列，那会让前端提示错误的字段）。
