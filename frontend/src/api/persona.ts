@@ -1,6 +1,6 @@
-import { ApiError, NETWORK_ERROR_CODE, request } from '@/api/request'
+import { ApiError, request } from '@/api/request'
 import type { PageResult } from '@/types/api'
-import { ErrorCode } from '@/types/errcode'
+import { ErrorCode } from '@/types/errcode'  // 👈 补上了这行！
 import type { Persona, PersonaPayload } from '@/types/persona'
 
 /**
@@ -30,18 +30,6 @@ export function updatePersona(id: number, payload: PersonaPayload): Promise<Pers
 /** 删除人设：硬删，消息 / 记忆 / 画像 / 配置由数据库外键级联清理 */
 export function deletePersona(id: number): Promise<null> {
   return request.delete<null>(`/personas/${id}`)
-}
-
-/**
- * 把请求失败转成一句可展示的文案。
- * 后端「一 code 一 msg」，message 就是权威文案；只有请求根本没到后端时（-1）才用兜底 ——
- * 那时 message 是 axios 的英文原文（`Network Error` / `timeout of 15000ms exceeded`）。
- */
-export function toErrorMessage(error: unknown, fallback: string): string {
-  if (error instanceof ApiError && error.code !== NETWORK_ERROR_CODE) {
-    return error.message
-  }
-  return fallback
 }
 
 /**
