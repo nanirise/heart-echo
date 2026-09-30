@@ -1,7 +1,6 @@
+import { toErrorMessage } from '@/api/error'
 import { defineStore } from 'pinia'
-
 import { chatApi, listPersonas } from '@/api/mock'
-import { ApiError, NETWORK_ERROR_CODE } from '@/api/request'
 import type { ChatMessage } from '@/types/chat'
 import type { Persona } from '@/types/persona'
 
@@ -19,18 +18,6 @@ let lastSentContent = ''
 /** 本地临时消息的 id 计数器，只减不增 —— 生成的 id 全是负数，不会和真实 id 撞 */
 let tempSeq = 0
 
-/**
- * 把 catch 到的 unknown 收窄成一句能展示的文案。
- * 只有「请求根本没到后端」时才用兜底 —— 那时 message 是 axios 的英文原文
- * （Network Error / timeout of 15000ms exceeded），直接给用户看太难看。
- */
-function toMessage(error: unknown): string {
-  if (error instanceof ApiError && error.code !== NETWORK_ERROR_CODE) {
-    return error.message
-  }
-
-  return '网络异常，请检查网络后重试'
-}
 
 /**
  * 中断与真失败必须分开处理：前者是用户自己的选择（切人设、主动停止），不该弹错误。
@@ -109,7 +96,7 @@ export const useChatStore = defineStore('chat', {
         const result = await listPersonas()
         this.personas = result.list
       } catch (error) {
-        this.errorMessage = toMessage(error)
+        this.errorMessage = toErrorMessage(error, '网络异常，请检查网络后重试')
       }
     },
 
@@ -133,7 +120,7 @@ export const useChatStore = defineStore('chat', {
           return
         }
 
-        this.errorMessage = toMessage(error)
+        this.errorMessage = toErrorMessage(error, '网络异常，请检查网络后重试')
       }
     },
 
@@ -235,7 +222,7 @@ export const useChatStore = defineStore('chat', {
       } catch (error) {
         // 中断是用户自己的选择，不是失败，不该弹错误
         if (isAbortError(error) === false && personaId === this.currentPersonaId) {
-          this.errorMessage = toMessage(error)
+          this.errorMessage = toErrorMessage(error, '网络异常，请检查网络后重试')
         }
       } finally {
         // 只有「我还是当前那条流」才复位。否则用户已经切走并开了新流，

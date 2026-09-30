@@ -7,8 +7,8 @@ import {
   deletePersona,
   isPersonaNotFound,
   listPersonas,
-  toErrorMessage,
 } from '@/api/persona'
+import { toErrorMessage } from '@/api/error'
 import type { Persona } from '@/types/persona'
 
 import PersonaFormDialog from './PersonaFormDialog.vue'
@@ -235,11 +235,13 @@ onMounted(() => {
 .persona-desc {
   display: -webkit-box;
   -webkit-line-clamp: 3;
+  line-clamp: 3;
   -webkit-box-orient: vertical;
 }
 
 .persona-style {
   display: -webkit-box;
+  line-clamp: 2;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   color: var(--el-text-color-secondary);
