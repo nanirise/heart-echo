@@ -11,11 +11,11 @@
 |---|---|---|---|---|
 | 1 | **关闭 JWTAuth 空壳** | `internal/middleware/jwt.go`、`jwt_test.go` | spec §5.1 全部 8 条勾上；`go test ./internal/middleware/` 通过 | ✅ 已完成（PR A，PR #34 已合并） |
 | 2 | 请求 / 响应 DTO | `internal/dto/auth_dto.go` | 5 个结构体的 binding tag 与契约 §3 的校验规则逐条对应，表驱动单测通过 | ✅ 已完成（PR B） |
-| 3 | 用户仓储 | `internal/repository/user_repo.go` | 6 个方法：`Create` / `FindByUsername` / `FindByEmail` / `FindByID` / `UpdateProfile` / `UpdatePassword` | 🔶 4/6（PR B：前 4 个。`UpdateProfile` / `UpdatePassword` 留 PR C） |
-| 4 | 认证业务逻辑 | `internal/service/auth_service.go` | `Register` / `Login` / `Refresh` / `GetProfile` / `UpdateProfile` / `ChangePassword`；bcrypt；令牌签发 | 🔶 3/6（PR B：前 3 个 + bcrypt + 令牌签发。profile / 改密三件套留 PR C） |
-| 5 | HTTP 层 | `internal/handler/auth_handler.go` | 6 个 handler，薄到只做"绑定 → 调 service → 写响应" | 🔶 3/6（PR B：前 3 个。`RegisterUserRoutes` 留 PR C） |
-| 6 | 路由挂载 | `internal/handler/router.go` | 前 3 个挂 `api` 组，后 3 个挂 `protected` 组 | 🔶 前 3 个已挂 `api`（PR B）；后 3 个挂 `protected` 留 PR C |
-| 7 | 冒烟验收 | — | spec §5 全部勾上（**§5.2 依赖 PostgreSQL，本机无法完成**） | ⬜ 未开始 |
+| 3 | 用户仓储 | `internal/repository/user_repo.go` | 6 个方法：`Create` / `FindByUsername` / `FindByEmail` / `FindByID` / `UpdateProfile` / `UpdatePassword` | ✅ 6/6（PR B 前 4 个，PR C 补 `UpdateProfile` / `UpdatePassword`） |
+| 4 | 认证业务逻辑 | `internal/service/auth_service.go` | `Register` / `Login` / `Refresh` / `GetProfile` / `UpdateProfile` / `ChangePassword`；bcrypt；令牌签发 | ✅ 6/6（PR B 前 3 个 + bcrypt + 令牌签发，PR C 补 profile / 改密三件套） |
+| 5 | HTTP 层 | `internal/handler/auth_handler.go` | 6 个 handler，薄到只做"绑定 → 调 service → 写响应" | ✅ 6/6（PR B 前 3 个，PR C 补后 3 个 + `RegisterUserRoutes`） |
+| 6 | 路由挂载 | `internal/handler/router.go` | 前 3 个挂 `api` 组，后 3 个挂 `protected` 组 | ✅ 前 3 个挂 `api`（PR B），后 3 个挂 `protected`（PR C） |
+| 7 | 冒烟验收 | — | spec §5 全部勾上 | ✅ 已完成（2026-09-30，本机原生 PG 16 + 真后端，spec §5 全勾） |
 
 **顺序不可颠倒**：Step 2 → 3 → 4 → 5 是"类型从内向外逐层依赖"（handler 的入参类型来自 dto、service 的返回来自 repo），先写外层会反复返工。Step 1 独立，可以先做——它不碰 dto / repo / service 任何一个。
 
@@ -26,8 +26,8 @@
 | PR | 分支 | 步骤 | 内容 | 状态 |
 |---|---|---|---|---|
 | **A** | `feature/auth-middleware` | spec + Step 1 | 本 spec/plan + JWTAuth 实装 + 单测 | ✅ **已合并（PR #34）** |
-| **B** | `feature/auth-register-login` | Step 2–4、6（部分） | register / login / refresh 三个端点的 dto + repo + service + handler + 挂载 | 🔶 代码完成、`go test ./...` 全绿、反向注入验证过；**未做端到端验证**（本机无 PG）。待开 PR |
-| **C** | `feature/auth-profile` | Step 5、6（其余） | `GET`/`PUT /user/profile`、`PUT /user/password` | ⬜ 待 B 合并后 |
+| **B** | `feature/auth-register-login` | Step 2–4、6（部分） | register / login / refresh 三个端点的 dto + repo + service + handler + 挂载 | ✅ **已合并（PR #45）** |
+| **C** | `feature/auth-profile` | Step 3–6（其余） | `GET`/`PUT /user/profile`、`PUT /user/password` | 🔶 代码完成、`go test ./...` 全绿、**端到端冒烟通过**（2026-09-30）；待开 PR |
 
 **切分判据**：一个 PR = 一件**能独立验证、能单独 review** 的事。
 
@@ -36,6 +36,8 @@
 - PR C 在 B 的文件上**追加**方法，从 B 合并后的 `develop` 切出，不冲突
 
 > ⚠️ **PR B 是"提上去验不了端到端"的 PR**（spec §3.3）。它只有单测覆盖。这样做的理由是成员 2 的 `frontend-auth-request` 在等这 3 个端点，代码早写出来，PG 一就位就能立刻验，不必等到那时候才开始写。**PR 描述里必须写明"未做端到端验证"**，不能含糊。
+>
+> ✅ **2026-09-30 已补上**：本机 PG 就位后，PR C 的冒烟把 PR B 的 3 个端点一并端到端打了（register / login / refresh 都在 §5.2 里）。这段"欠着"到此为止——**留着它是为了让后来人知道当时为什么敢在没验的情况下合并**，不是因为还欠着。
 
 ## 2. 文件清单
 
@@ -49,6 +51,7 @@
 | `backend/internal/handler/auth_handler.go` | 6 个 handler | 成员 2、成员 3（写法模板） | B（C 追加） |
 | `backend/internal/handler/router.go` | 6 行挂载（**改现有文件**） | 全员 | B、C |
 | `backend/go.mod` / `go.sum` | `golang.org/x/crypto` indirect → direct | 全员 | B |
+| `backend/internal/handler/auth_handler_test.go` | handler 的**请求体处理**测试（新建，PR C） | 成员 1 | C |
 
 ## 3. 关键实现要点
 
@@ -100,6 +103,26 @@ type UpdateProfileReq struct {
 
 顺带一处不对称：`CompareHashAndPassword`（登录方向，`bcrypt.go:108-125`）**没有**这个长度检查。生成方向报错，比对方向不报错。
 
+### 3.6 `PUT /user/profile` 要**严格解码**，不能默认忽略多余字段（Step 5）
+
+> 2026-09-30 新增。契约 §3.5 同步加了同样的说明。
+
+`c.ShouldBindJSON` 走的是 `encoding/json` 的默认解码：请求体里有对不上结构体字段的键，**不报错、直接丢掉**。
+
+对别的端点无所谓，对这一个不行。它是全项目唯一的"部分更新"接口——两个字段都可选，所以 `{}` 是**合法**请求。于是这两种情况返回的响应一模一样：
+
+- 调用方发 `{}` —— 什么都没想改，`200` 正确
+- 调用方把 `username` 拼成 `user_name` —— 键被丢掉，什么都没改，也是 `200`
+
+第二种人看到"保存成功"，只能自己猜。改用 `json.Decoder.DisallowUnknownFields()`，多个不认识的键就返 `4001`。
+
+**两个坑**：
+
+1. **`ValidateStruct` 必须显式补上**。`ShouldBindJSON` 是"解码 + 跑 binding tag"两件事，换成手写 `Decoder` 只剩第一件。漏了它 `min=3` / `alphanum` 会**静默失效**——不报错，只是不再拦人。测试里那条"太短的用户名"就是专门钉这个的。
+2. **别用 gin 的全局开关** `binding.EnableDecoderDisallowUnknownFields`。它是一个包级 bool，一改全项目所有端点都变成严格模式，包括别人的。这里要的只是单端点。
+
+**前端的雷**：把整个 user 对象 PUT 上来（`{id, username, email, avatarUrl, createdAt}`）会 `4001`。store 里正好有整个对象，顺手 PUT 过去是很自然的写法，所以契约 §3.5 专门写了警示。
+
 ### 3.6 目标用户只能来自 token（Step 4–5）
 
 `GET`/`PUT /user/profile`、`PUT /user/password` 三个端点，service 方法的签名**不接收** `userID` 参数以外的用户标识，handler 从 `c.GetUint64(middleware.ContextKeyUserID)` 取。
@@ -113,7 +136,7 @@ type UpdateProfileReq struct {
 | 风险 | 对策 |
 |---|---|
 | **JWTAuth 空壳被遗忘，一直放行** | 三处留痕（`jwt.go` 的 `TODO` + backend-skeleton spec §2.3 + 本 spec §2.3）；列为第一条验收项；Step 1 今天就做 |
-| **本机无 PostgreSQL，端点 1–6 无法端到端验证** | 验收标准里如实标注，不勾 ✅；PR 描述写明"未端到端验证"；向成员 3 要可连的库（spec §7 第 3 条） |
+| ~~**本机无 PostgreSQL，端点 1–6 无法端到端验证**~~ | **2026-09-30 已解除**：本机原生装了 PG 16，六个端点全部端到端打过（spec §5.2）。当时的对策（如实标注、PR 描述写明、向成员 3 借库）已不再需要 |
 | 并发注册撞唯一索引返回 500 而非 4003/4004 | 捕获 SQLSTATE `23505`（§3.3） |
 | 登录接口可被计时枚举用户名 | 用户不存在时也跑一次假哈希比对（§3.4） |
 | `ContextKeyUserID` 取到 0 导致归属校验形同虚设 | Step 1 与 Step 4 的**顺序**写进本 plan；单测断言 Context 里写进去的确实是签发时的 userID |
@@ -131,3 +154,6 @@ type UpdateProfileReq struct {
 | 2026-09-18 | 已知未做：**路由挂载方式的群广播**（`API_CONTRACT.md` §12「已广播」列仍全空）、**契约 §13 三方冻结签署**仍空白 | 两条都需要三人到场 |
 | 2026-09-20 | **PR B 代码完成**：Step 2 dto（+ 30 条子用例）、Step 3 repo 4 个方法、Step 4 service 3 个方法、Step 5 前 3 个 handler、Step 6 挂到 `api` 组。`go build` / `go vet` / `go test ./...` 全绿；新测试全部做过反向注入（削弱 tag、把路由挂到 `protected` 上），确认拦得住 | **端点仍无法端到端验证**（本机无 Docker / PostgreSQL），PR 描述已如实标注 |
 | 2026-09-20 | 与决策 ③「repo 只做 3 个方法」的偏差：决策 ①（refresh 要回查库）需要 `FindByID`，实际 4 个。偏差已并入 PR B，PR C 的 repo 剩 2 个方法 | — |
+| 2026-09-30 | **PR C 代码完成**：Step 3 补 `UpdateProfile` / `UpdatePassword`、Step 4 补 profile / 改密三件套、Step 5 补后 3 个 handler + `RegisterUserRoutes`、Step 6 挂 `protected` 组（`router.go`，与成员 3 的 persona 路由同组）。新增 `internal/handler/auth_handler_test.go` 承接「handler 拿到请求之后怎么解析」这一类测试（`router_test.go` 只管路由装配，两者的分工写进了各自的文件头） | — |
+| 2026-09-30 | **端到端冒烟通过**，Step 7 完成，spec §5 全勾。本机原生 PG 16 + `go run ./cmd/server`，约 30 条请求含 20 多条负例，日志 0 ERROR / 0 500。**PR B 当时欠的"未端到端验证"补上了** | 无（阻塞已解） |
+| 2026-09-30 | Step 5 的偏差：`PUT /user/profile` 改用严格解码（`bindStrictJSON`），请求体出现 `username` / `avatarUrl` 以外的键返回 `4001`。原因见契约 §3.5——它是全项目唯一的"部分更新"接口，宽松解码会让"拼错字段名"和"什么都没改"返回同样的 `200 保存成功` | 契约行为变更，**待广播** |
