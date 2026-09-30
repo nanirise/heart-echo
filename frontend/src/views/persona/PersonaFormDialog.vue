@@ -3,7 +3,8 @@ import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormItemRule, FormRules } from 'element-plus'
 
-import { createPersona, toErrorMessage, updatePersona } from '@/api/persona'
+import { createPersona, updatePersona } from '@/api/persona' 
+import { toErrorMessage } from '@/api/error'                
 import type { Persona, PersonaPayload } from '@/types/persona'
 
 const props = defineProps<{
