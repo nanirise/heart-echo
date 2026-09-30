@@ -1,7 +1,11 @@
 package dto
 
 import (
+	"encoding/json"
+	"time"
+
 	"github.com/nanirise/heart-echo/backend/internal/model"
+	"github.com/nanirise/heart-echo/backend/pkg/errcode"
 	"github.com/nanirise/heart-echo/backend/pkg/jwt"
 )
 
@@ -65,4 +69,69 @@ func NewUserResponse(u *model.User) UserResponse {
 type AuthResponse struct {
 	jwt.TokenPair
 	User UserResponse `json:"user"`
+}
+
+// UpdateProfileRequest 是 PUT /user/profile 的请求体（契约 §3.5）。
+// 两个字段都可选，但"可选"的含义不同，所以类型不同。
+type UpdateProfileRequest struct {
+	// nil = 没传（不改）；非 nil = 传了值（改成它）
+	Username *string `json:"username" binding:"omitempty,min=3,max=20,alphanum"`
+
+	// 用 json.RawMessage 而非 *string：要区分三态（契约 §3.5 允许传 null 清空头像）。
+	// *string 下"没传"和"传了 null"都是 nil，用户点"清空头像"会被当成"没传"，
+	// 而这个 bug 在只测 {"username":"x"} 时看不出来。
+	AvatarURL json.RawMessage `json:"avatarUrl"`
+}
+
+// ParseAvatarURL 把三态解析成「要不要改、改成什么」。
+// present=false 表示请求里没有这个字段，调用方应保持原值不动。
+func (r *UpdateProfileRequest) ParseAvatarURL() (value *string, present bool, err error) {
+	if len(r.AvatarURL) == 0 {
+		return nil, false, nil // 没传
+	}
+	if string(r.AvatarURL) == "null" {
+		return nil, true, nil // 明确清空：要改，改成 nil
+	}
+	var s string
+	if err := json.Unmarshal(r.AvatarURL, &s); err != nil {
+		// 传了数字 / 对象 / 布尔：契约只允许字符串或 null
+		return nil, false, errcode.New(errcode.ErrInvalidParams)
+	}
+	// 契约 §3.5：最长 255，对齐 users.avatar_url 的 varchar(255)。
+	// 不拦的话超长会走到数据库报 22001，用户拿到 5003 而不是 4001。
+	if len(s) > 255 {
+		return nil, false, errcode.New(errcode.ErrInvalidParams)
+	}
+	return &s, true, nil
+}
+
+// ChangePasswordRequest 是 PUT /user/password 的请求体（契约 §3.6）。
+// newPassword 的规则与注册**逐条相同**——两处不一致的话，会出现
+// "注册时能用的密码，改密码时说它不合法"。
+type ChangePasswordRequest struct {
+	// 只 required，不套长度与字符集：理由同 LoginRequest。
+	// 老密码格式不对和密码错，对用户来说是同一件事，多校验一层只会
+	// 让他拿到 4001 而不是 4015，反而看不出是密码错了。
+	OldPassword string `json:"oldPassword" binding:"required"`
+	NewPassword string `json:"newPassword" binding:"required,min=8,max=32,printascii"`
+}
+
+// ProfileResponse 是 GET /user/profile 的响应 data（契约 §3.4）。
+//
+// 内嵌 UserResponse 而不是重抄那 4 个字段：契约 §3.1 与 §3.4 共有的字段
+// 只定义一次，不会出现"注册响应里叫 username、资料响应里叫 userName"。
+// 内嵌是匿名的，序列化后是平铺的 {id, username, email, avatarUrl, createdAt}，
+// 不是嵌套的 {"UserResponse": {...}}。
+type ProfileResponse struct {
+	UserResponse
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+// NewProfileResponse 把用户实体转成资料响应。复用 NewUserResponse，
+// 不重写那 4 个字段的赋值——重写就等于把防线又抄了一遍。
+func NewProfileResponse(u *model.User) ProfileResponse {
+	return ProfileResponse{
+		UserResponse: NewUserResponse(u),
+		CreatedAt:    u.CreatedAt,
+	}
 }
