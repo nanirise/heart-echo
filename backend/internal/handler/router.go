@@ -38,7 +38,10 @@ func NewRouter(cfg *config.Config, logger *zap.Logger, db *gorm.DB) *gin.Engine 
 	api.GET("/health", healthHandler(cfg, db))
 
 	authService := service.NewAuthService(db, cfg.JWT)
-	RegisterAuthRoutes(api, NewAuthHandler(authService))
+	// handler 提成变量而不是各写一次 NewAuthHandler：同一个 service 被两组路由复用，
+	// 构造两次会得到两个内容相同的 handler，读起来像是两个不同的东西。
+	authHandler := NewAuthHandler(authService)
+	RegisterAuthRoutes(api, authHandler)
 
 	// 业务路由一律挂 protected：它比 api 多一道 JWTAuth。
 	protected := api.Group("")
@@ -47,6 +50,10 @@ func NewRouter(cfg *config.Config, logger *zap.Logger, db *gorm.DB) *gin.Engine 
 	// 依赖在此逐层装配：装配点全局只此一处，单测才能整体替换（plan §3.1）。
 	personaService := service.NewPersonaService(db)
 	RegisterPersonaRoutes(protected, NewPersonaHandler(personaService))
+
+	// 用户资料三个端点（契约 §3.4-3.6）与 persona 一样需鉴权：
+	// 它们改的是"令牌里那个人"，没有 userID 入参，所以必须挂 protected 而不是 api。
+	RegisterUserRoutes(protected, authHandler)
 
 	return r
 }
