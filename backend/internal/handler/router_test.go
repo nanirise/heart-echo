@@ -137,6 +137,27 @@ var personaRoutes = []struct {
 	{"删除", http.MethodDelete, "/api/v1/personas/1"},
 }
 
+// userRoutes 是用户资料的 3 条路由（契约 §3.4-3.6）。
+var userRoutes = []struct {
+	name   string
+	method string
+	path   string
+}{
+	{"读资料", http.MethodGet, "/api/v1/user/profile"},
+	{"改资料", http.MethodPut, "/api/v1/user/profile"},
+	{"改密码", http.MethodPut, "/api/v1/user/password"},
+}
+
+// protectedRoutes 是挂在 protected 组下的全部路径，用来验"合法令牌能越过 JWTAuth"。
+// 只取 GET：其余方法在无 body 时会掉进 4001，把"停在数据库"这个判据搅混。
+var protectedRoutes = []struct {
+	name string
+	path string
+}{
+	{"personas", "/api/v1/personas"},
+	{"user/profile", "/api/v1/user/profile"},
+}
+
 // TestPersonaRoutesRejectAnonymousRequests 逐条打一遍：不带 token 必须全部 4010。
 //
 // ⚠️ 这条只证「挂上了 + 路径没写错、而且不是 404」，**证不了鉴权在不在链上**：
@@ -163,6 +184,31 @@ func TestPersonaRoutesRejectAnonymousRequests(t *testing.T) {
 	}
 }
 
+// TestUserRoutesRejectAnonymousRequests 逐条打一遍用户资料的 3 条路由：不带 token 必须全部 4010。
+//
+// ⚠️ 与 persona 那条一样，这条**证不了鉴权在不在链上**：
+// auth_handler 的 currentUserID 取不到 userID 时自己也返 4010，
+// 把 RegisterUserRoutes 的挂载点从 protected 挪到 api 它照样绿。
+// 鉴权真挂上了由 TestValidTokenPassesJWTAuth 与 TestProtectedRoutesRejectBadTokens 负责。
+//
+// 这条真正拦的是另一件事：路径拼错、或压根没调用 RegisterUserRoutes —— 那时是 404。
+func TestUserRoutesRejectAnonymousRequests(t *testing.T) {
+	r := newTestRouter(t)
+
+	for _, route := range userRoutes {
+		t.Run(route.name, func(t *testing.T) {
+			rec := doRequest(t, r, route.method, route.path, "")
+
+			if got, want := rec.Code, errcode.ErrUnauthorized.HTTPStatus(); got != want {
+				t.Fatalf("HTTP 状态码应为 %d，实际 %d，响应体 %q", want, got, rec.Body.String())
+			}
+			if got := decodeBody(t, rec).Code; got != int(errcode.ErrUnauthorized) {
+				t.Errorf("业务码应为 %d，实际 %d", errcode.ErrUnauthorized, got)
+			}
+		})
+	}
+}
+
 // TestProtectedRoutesRejectBadTokens 覆盖 4011 / 4012 两条失败路径与响应体结构。
 //
 // 在真路由上验，不是在中间件的测试引擎上：中间件单独过测、却漏挂到路由组上，
@@ -175,19 +221,24 @@ func TestProtectedRoutesRejectBadTokens(t *testing.T) {
 
 	cases := []struct {
 		name   string
+		path   string
 		header string
 		want   errcode.ErrorCode
 	}{
-		{"方案名不是 Bearer", "Basic " + valid.AccessToken, errcode.ErrUnauthorized},
-		{"access token 已过期", "Bearer " + expired.AccessToken, errcode.ErrTokenExpired},
-		{"拿 refresh token 当 access 用", "Bearer " + valid.RefreshToken, errcode.ErrTokenInvalid},
-		{"签名被篡改", "Bearer " + tamperSignature(t, valid.AccessToken), errcode.ErrTokenInvalid},
-		{"换了个密钥签的", "Bearer " + otherKey.AccessToken, errcode.ErrTokenInvalid},
+		{"方案名不是 Bearer", "/api/v1/personas", "Basic " + valid.AccessToken, errcode.ErrUnauthorized},
+		{"access token 已过期", "/api/v1/personas", "Bearer " + expired.AccessToken, errcode.ErrTokenExpired},
+		{"拿 refresh token 当 access 用", "/api/v1/personas", "Bearer " + valid.RefreshToken, errcode.ErrTokenInvalid},
+		{"签名被篡改", "/api/v1/personas", "Bearer " + tamperSignature(t, valid.AccessToken), errcode.ErrTokenInvalid},
+		{"换了个密钥签的", "/api/v1/personas", "Bearer " + otherKey.AccessToken, errcode.ErrTokenInvalid},
+		// 换一条路由再验一遍 4011：persona 那几条只能证明 JWTAuth 挂在 persona 上，
+		// 证不了它同时罩住了 user 组。这里的 4011 是 handler 自己产不出来的码
+		// （auth_handler 在无 userID 时只返 4010），所以命中即为中间件真的跑了。
+		{"refresh 当 access 用（user 路由）", "/api/v1/user/profile", "Bearer " + valid.RefreshToken, errcode.ErrTokenInvalid},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			rec := doRequest(t, r, http.MethodGet, "/api/v1/personas", tc.header)
+			rec := doRequest(t, r, http.MethodGet, tc.path, tc.header)
 
 			if got, want := rec.Code, tc.want.HTTPStatus(); got != want {
 				t.Fatalf("HTTP 状态码应为 %d，实际 %d，响应体 %q", want, got, rec.Body.String())
@@ -219,14 +270,21 @@ func TestValidTokenPassesJWTAuth(t *testing.T) {
 	r := newTestRouter(t)
 	valid := mustPair(t, testSecret, 2*time.Hour)
 
-	rec := doRequest(t, r, http.MethodGet, "/api/v1/personas", "Bearer "+valid.AccessToken)
-	body := decodeBody(t, rec)
+	// 逐条 protected 路由都验一遍：JWTAuth 是挂在 protected 组上的，
+	// 但"挂上了"只能按路由一条条证 —— 单独某条被挪到 api 组时，
+	// 别的路由照样绿。
+	for _, route := range protectedRoutes {
+		t.Run(route.name, func(t *testing.T) {
+			rec := doRequest(t, r, http.MethodGet, route.path, "Bearer "+valid.AccessToken)
+			body := decodeBody(t, rec)
 
-	if body.Code == int(errcode.ErrUnauthorized) {
-		t.Fatalf("合法 access token 拿到了 4010 —— JWTAuth 没挂在这条路由上，响应体 %q", rec.Body.String())
-	}
-	if want := int(errcode.ErrDBFailed); body.Code != want {
-		t.Errorf("越过鉴权后应停在数据库失败 %d，实际 %d，响应体 %q", want, body.Code, rec.Body.String())
+			if body.Code == int(errcode.ErrUnauthorized) {
+				t.Fatalf("合法 access token 拿到了 4010 —— JWTAuth 没挂在这条路由上，响应体 %q", rec.Body.String())
+			}
+			if want := int(errcode.ErrDBFailed); body.Code != want {
+				t.Errorf("越过鉴权后应停在数据库失败 %d，实际 %d，响应体 %q", want, body.Code, rec.Body.String())
+			}
+		})
 	}
 }
 

@@ -1,20 +1,33 @@
-// 覆盖 auth_service 里**不碰数据库**的部分：哈希、假哈希、令牌签发、响应结构。
+// 覆盖 auth_service 里**不碰数据库**的部分：哈希、假哈希、令牌签发、响应结构；
+// 外加"越过参数校验之后、拿不到数据"那一段的错误映射（用不连库的 *gorm.DB 造出来）。
 //
 // 注册 / 登录 / 刷新的成功分支都要读 users 表，本机没有 PostgreSQL 跑不了——
 // 那部分由 PR 描述里的"未端到端验证"如实标注，这里不假装覆盖了。
+//
+// 同样够不到的还有 UpdateProfile / ChangePassword 里**读到用户之后**才走到的分支：
+// 改资料撞名 4004、传了和现在一样的用户名要放行、老密码不对 4015。
+// 原因是 AuthService.userRepo 是具体的 *repository.UserRepo，没有接口可以换替身
+// （PersonaService 也一样），本仓库也没有连真库的测试基建。
+// 这几条目前只有端到端冒烟测试覆盖 —— 不写，是因为写了也只能是假的。
 package service
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"sort"
 	"strings"
 	"testing"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 
 	"github.com/nanirise/heart-echo/backend/internal/config"
+	"github.com/nanirise/heart-echo/backend/internal/dto"
 	"github.com/nanirise/heart-echo/backend/internal/model"
+	"github.com/nanirise/heart-echo/backend/pkg/errcode"
 	"github.com/nanirise/heart-echo/backend/pkg/jwt"
 )
 
@@ -33,6 +46,48 @@ func testService() *AuthService {
 			AccessTokenExpire:  testAccessTTL,
 			RefreshTokenExpire: testRefreshTTL,
 		},
+	}
+}
+
+// testDB 返回一个**不连库**的 *gorm.DB，与 handler / repository 两个包里的同名 helper 一致。
+// 指向一个必然拒绝连接的端口：任何真去执行 SQL 的路径都会立刻拿到驱动错误，不必干等超时。
+func testDB(t *testing.T) *gorm.DB {
+	t.Helper()
+
+	db, err := gorm.Open(
+		postgres.Open("host=127.0.0.1 port=1 user=x password=x dbname=x sslmode=disable"),
+		&gorm.Config{DisableAutomaticPing: true},
+	)
+	if err != nil {
+		t.Fatalf("构造测试用 *gorm.DB 失败: %v", err)
+	}
+	return db
+}
+
+// testServiceWithDeadDB 的 userRepo 连着一个必然连不上的库。
+// 用来验证"参数校验过了、数据拿不到"这一段的错误映射。
+func testServiceWithDeadDB(t *testing.T) *AuthService {
+	t.Helper()
+	return NewAuthService(testDB(t), config.JWTConfig{Secret: testSecret})
+}
+
+// assertBizCode 断言错误是**指定错误码**的 BizError。
+//
+// 只判 err != nil 不够：这里要区分的是 5003 和 5000 / 4041 / 4010 三个"看起来都像失败"
+// 的结果，而这几种错误码在日志里长得几乎一样。也不比 err.Error() 字符串——
+// 那是有标点的中文文案，改个字就断。
+func assertBizCode(t *testing.T, err error, want errcode.ErrorCode) {
+	t.Helper()
+
+	if err == nil {
+		t.Fatalf("应当返回错误码 %d（%s），实际没有错误", want, want.Message())
+	}
+	var biz *errcode.BizError
+	if !errors.As(err, &biz) {
+		t.Fatalf("错误不是 *errcode.BizError，实际 %T: %v", err, err)
+	}
+	if biz.Code != want {
+		t.Errorf("错误码应为 %d（%s），实际 %d（%s）", want, want.Message(), biz.Code, biz.Code.Message())
 	}
 }
 
@@ -214,4 +269,72 @@ func sortedKeys(m map[string]json.RawMessage) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// TestUpdateProfileRejectsBadAvatarBeforeDB 钉住参数校验**发生在**数据库访问之前。
+//
+// 顺序本身就是行为，不只是实现细节：反过来的话，一个把 avatarUrl 传成数字的请求
+// 会先去查一次库（白跑一个来回），而且在库不可用时返回的是 5003「数据库操作失败」——
+// 用户按提示去查库，实际上是他自己传错了类型，正确答案是 4001。
+//
+// 这条能成立的前提正是"校验在前"：testServiceWithDeadDB 的库连不上，
+// 只要代码先碰到 userRepo，返回的就必然是 5003 而不是 4001。
+func TestUpdateProfileRejectsBadAvatarBeforeDB(t *testing.T) {
+	s := testServiceWithDeadDB(t)
+
+	cases := []struct {
+		name string
+		body string
+	}{
+		{"传数字", `{"avatarUrl":123}`},
+		{"传对象", `{"avatarUrl":{"a":1}}`},
+		{"传布尔", `{"avatarUrl":true}`},
+		{"超过 255 字符", `{"avatarUrl":"` + strings.Repeat("a", 256) + `"}`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var req dto.UpdateProfileRequest
+			if err := json.Unmarshal([]byte(tc.body), &req); err != nil {
+				t.Fatalf("请求体不是合法 JSON: %v，原文 %q", err, tc.body)
+			}
+
+			_, err := s.UpdateProfile(context.Background(), 1, &req)
+			assertBizCode(t, err, errcode.ErrInvalidParams)
+		})
+	}
+}
+
+// TestProfileEndpointsWrapDBErrors 钉住"库出错 → 5003"这条映射，三个端点各一遍。
+//
+// 判据取 5003 而不是别的，是因为它的三个邻居都是"看起来也像失败"的结果：
+//   - 不是 5000：原始错误忘了用 errcode.Wrap 包起来，BizErrorHandler 认不出 BizError，
+//     会把它归成"服务端内部错误"——前端看不出是库的问题，日志里也丢了错误码这一层；
+//   - 不是 4010 / 4012：连不上库和"登录过期"必须分开，否则库抖一下，全站用户被登出；
+//   - 不是 4041：连不上库和"用户被删号"也必须分开，前者该重试、后者该登出。
+//
+// 用真实的驱动错误（连不上的端口）而不是造一个假 error：gorm.ErrRecordNotFound
+// 也是 error，分不清这两种就全乱了。
+func TestProfileEndpointsWrapDBErrors(t *testing.T) {
+	s := testServiceWithDeadDB(t)
+	ctx := context.Background()
+
+	t.Run("GetProfile", func(t *testing.T) {
+		_, err := s.GetProfile(ctx, 1)
+		assertBizCode(t, err, errcode.ErrDBFailed)
+	})
+
+	t.Run("UpdateProfile", func(t *testing.T) {
+		name := "newname"
+		_, err := s.UpdateProfile(ctx, 1, &dto.UpdateProfileRequest{Username: &name})
+		assertBizCode(t, err, errcode.ErrDBFailed)
+	})
+
+	t.Run("ChangePassword", func(t *testing.T) {
+		err := s.ChangePassword(ctx, 1, &dto.ChangePasswordRequest{
+			OldPassword: "Passw0rd!",
+			NewPassword: "NewPassw0rd!",
+		})
+		assertBizCode(t, err, errcode.ErrDBFailed)
+	})
 }

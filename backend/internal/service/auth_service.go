@@ -142,6 +142,124 @@ func (s *AuthService) Refresh(ctx context.Context, refreshToken string) (*jwt.To
 	return pair, nil
 }
 
+// GetProfile 读当前用户的公开信息（契约 §3.4）。
+//
+// userID 只能来自令牌（handler 从 Context 取），本方法不接受任何"要查谁"的参数——
+// 一旦存在 GET /user/profile?userId=2 这种形式，越权防线就多了一个入口。
+//
+// [假设] 契约 §3.4 没有列错误码。令牌有效但用户行已不在（被删号）时返回 4041「用户不存在」，
+// 备选是返回 4010 让前端直接登出。两者都能自洽，取 4041 是因为它字面就是这个情形；
+// 若前端更希望这种情况触发登出，改成 4010 即可。
+func (s *AuthService) GetProfile(ctx context.Context, userID uint64) (*dto.ProfileResponse, error) {
+	u, err := s.userRepo.FindByID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errcode.New(errcode.ErrUserNotFound)
+		}
+		return nil, errcode.Wrap(errcode.ErrDBFailed, err)
+	}
+	resp := dto.NewProfileResponse(u)
+	return &resp, nil
+}
+
+// UpdateProfile 更新当前用户的资料（契约 §3.5）。
+func (s *AuthService) UpdateProfile(
+	ctx context.Context,
+	userID uint64,
+	req *dto.UpdateProfileRequest,
+) (*dto.ProfileResponse, error) {
+	avatarURL, setAvatar, err := req.ParseAvatarURL()
+	if err != nil {
+		return nil, err
+	}
+
+	// 先查一次。除了拿旧用户名做对比，还因为后面的 UPDATE 命中 0 行**不报错**——
+	// 不先查的话，"用户已被删号"会表现成"更新成功但读回来还是老样子"，无从察觉。
+	u, err := s.userRepo.FindByID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errcode.New(errcode.ErrUserNotFound)
+		}
+		return nil, errcode.Wrap(errcode.ErrDBFailed, err)
+	}
+
+	if req.Username != nil {
+		// 这道判断在 HTTP 链路上到不了：dto 的 binding 已经用 min=3 把空串拦下了
+		//（omitempty 对指针判的是"指针是不是 nil"，非 nil 的空串照样过 min 这一关）。
+		// 留着它是把"用户名不能为空"这个不变式放在 service 自己手上，
+		// 而不是只写在 HTTP 层的一个 tag 里——tag 从 service 这边看不见，
+		// 换个调用方（或哪天 tag 被改松）就会静默放行，把用户名改成空串。
+		if *req.Username == "" {
+			return nil, errcode.New(errcode.ErrInvalidParams)
+		}
+		// 传了和现在一样的名字要放行：前端很可能每次提交都把两个字段都带上，
+		// 不比对的话"只改头像"会因为撞上自己的名字而报 4004。
+		if *req.Username != u.Username {
+			if _, err := s.userRepo.FindByUsername(ctx, *req.Username); err == nil {
+				return nil, errcode.New(errcode.ErrUsernameTaken)
+			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, errcode.Wrap(errcode.ErrDBFailed, err)
+			}
+		}
+	}
+
+	err = s.userRepo.UpdateProfile(ctx, userID, repository.ProfileUpdate{
+		Username:  req.Username,
+		AvatarURL: avatarURL,
+		SetAvatar: setAvatar,
+	})
+	if err != nil {
+		// 并发改同名时"先查"拦不住，靠 users 上的唯一索引兜底。
+		// 这里必须翻译成与先查相同的 4004，否则并发返回 5003、单发返回 4004。
+		if errors.Is(err, repository.ErrDuplicateUsername) {
+			return nil, errcode.New(errcode.ErrUsernameTaken)
+		}
+		return nil, errcode.Wrap(errcode.ErrDBFailed, err)
+	}
+
+	// 回查一次再返回：updated_at 由 GORM 改、清空头像的结果也只有库里说得准。
+	// 直接把请求参数回显会给出一个"看起来成功了"的假象。
+	u, err = s.userRepo.FindByID(ctx, userID)
+	if err != nil {
+		return nil, errcode.Wrap(errcode.ErrDBFailed, err)
+	}
+	resp := dto.NewProfileResponse(u)
+	return &resp, nil
+}
+
+// ChangePassword 修改当前用户的密码（契约 §3.6）。
+//
+// 这里**不需要** Login 那套假哈希计时防护：目标用户来自令牌，调用方已经证明
+// 自己是这个人，不存在"靠耗时枚举用户名"的空间。两处的取舍不同，照着抄会抄错。
+//
+// 契约 §3.6 的约定：成功后服务端不主动失效旧令牌，由前端清空登录态并跳登录页。
+func (s *AuthService) ChangePassword(
+	ctx context.Context,
+	userID uint64,
+	req *dto.ChangePasswordRequest,
+) error {
+	u, err := s.userRepo.FindByID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errcode.New(errcode.ErrUserNotFound)
+		}
+		return errcode.Wrap(errcode.ErrDBFailed, err)
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(req.OldPassword)); err != nil {
+		return errcode.New(errcode.ErrOldPasswordWrong)
+	}
+
+	hash, err := hashPassword(req.NewPassword)
+	if err != nil {
+		return errcode.Wrap(errcode.ErrInternal, err)
+	}
+	if err := s.userRepo.UpdatePassword(ctx, userID, hash); err != nil {
+		return errcode.Wrap(errcode.ErrDBFailed, err)
+	}
+	return nil
+}
+
 // ensureUnique 是唯一性的"先查一次"，作用只是给出友好错误。
 // 它拦不住并发——两个请求可以同时查到"不存在"然后一起插入，
 // 真正的防线是 users 表上那两个唯一索引（见 repository.UserRepo.Create）。

@@ -1,8 +1,8 @@
 # spec · 认证与用户（auth-login）
 
 > 功能名：auth-login ｜ 分支：`feature/auth-middleware` → `feature/auth-register-login` → `feature/auth-profile`（跨多个分支交付，PR 划分见 [plan §1.1](plan.md#11-pr-划分)）
-> 负责人：成员 1 ｜ 状态：已定稿（2026-09-18 审核通过。范围收敛为**只做 PR A**，B、C 顺延）
-> 创建：2026-09-18 ｜ 最后更新：2026-09-18
+> 负责人：成员 1 ｜ 状态：已定稿（2026-09-18 审核通过；PR A / B 已合入 `develop`，PR C 代码完成并**通过端到端冒烟**，见 §5.2）
+> 创建：2026-09-18 ｜ 最后更新：2026-09-30
 > 关联：[接口契约 §3](../../API_CONTRACT.md) ｜ [开发总纲 §3 / §4.2](../../dev/MASTER.md) ｜ [成员 1 开发文档 §2](../../dev/MEMBER_1_BACKEND_AI.md) ｜ [技术文档 §4.7 / §4.8](../../TECH_DESIGN.md) ｜ [backend-skeleton spec §2.2](../backend-skeleton/spec.md)
 
 ---
@@ -128,44 +128,53 @@
 
 ### 5.1 JWTAuth（不需要数据库，可完整验证）
 
-- [ ] 无 `Authorization` 头 → `4010`
-- [ ] `Authorization` 无 `Bearer ` 前缀 → `4010`
-- [ ] access token 已过期 → `4012`
-- [ ] **refresh token 当 access 用** → `4011`（`claims.TokenType != "access"`）
-- [ ] 签名被篡改 / 密钥不对 → `4011`
-- [ ] 合法 access token → 放行，且 `c.GetUint64(ContextKeyUserID)` 等于签发时的 `userID`、`c.GetString(ContextKeyUsername)` 等于用户名
-- [ ] 任一失败路径都调用了 `c.Abort()`，业务 handler **未被执行**
-- [ ] 失败响应的 body 是 `{code, message, data, timestamp}` 结构，`message` 与 `errcode` 一一对应
+- [x] 无 `Authorization` 头 → `4010`
+- [x] `Authorization` 无 `Bearer ` 前缀 → `4010`
+- [x] access token 已过期 → `4012`
+- [x] **refresh token 当 access 用** → `4011`（`claims.TokenType != "access"`）
+- [x] 签名被篡改 / 密钥不对 → `4011`
+- [x] 合法 access token → 放行，且 `c.GetUint64(ContextKeyUserID)` 等于签发时的 `userID`、`c.GetString(ContextKeyUsername)` 等于用户名
+- [x] 任一失败路径都调用了 `c.Abort()`，业务 handler **未被执行**
+- [x] 失败响应的 body 是 `{code, message, data, timestamp}` 结构，`message` 与 `errcode` 一一对应
 
-### 5.2 端点 1–6（需要 PostgreSQL，本机未验）
+### 5.2 端点 1–6（2026-09-30 实测通过）
 
-- [ ] `POST /auth/register` 返回 token pair + user 对象（**注册即登录**，契约 §3.1）
-- [ ] 邮箱重复 → `4003`；用户名重复 → `4004`
-- [ ] `POST /auth/login` 成功返回 token pair；失败（用户不存在 **或** 密码错）一律 `4013`
-- [ ] `POST /auth/refresh` 返回新的 token pair；refresh token 无效 → `4014`
-- [ ] `GET /user/profile` 带 token 可读；不带 token → `4010`
-- [ ] `PUT /user/profile` 能改 `avatarUrl` / `username`；用户名冲突 → `4004`
-- [ ] `PUT /user/password` 旧密码错 → `4015`；成功后新密码可登录
-- [ ] 库中存的是 bcrypt 哈希，不是明文
-- [ ] 任一响应体中不出现 `passwordHash`
+验证环境：本机原生 **PostgreSQL 16**（非 Docker）+ `go run ./cmd/server` 真后端，直接发 HTTP 请求。
+约 30 条请求（含 20 多条负例），后端日志 **0 个 ERROR / 0 个 500 / 0 个 panic**（WARN 全部是故意的负例）。
+
+- [x] `POST /auth/register` 返回 token pair + user 对象（**注册即登录**，契约 §3.1）
+- [x] 邮箱重复 → `4003`；用户名重复 → `4004`
+- [x] `POST /auth/login` 成功返回 token pair；失败（用户不存在 **或** 密码错）一律 `4013`
+- [x] `POST /auth/refresh` 返回新的 token pair；refresh token 无效 → `4014`
+- [x] `GET /user/profile` 带 token 可读；不带 token → `4010`
+- [x] `PUT /user/profile` 能改 `avatarUrl` / `username`；用户名冲突 → `4004`
+- [x] `PUT /user/profile` 传 `null` 能把 `avatarUrl` **清空**（查库确认 `avatar_url` 变成 NULL）—— 这条单独列，因为它只有真写库才验得出来：GORM 的 `Updates(struct)` 会跳过零值字段，清空必须走 map
+- [x] `PUT /user/profile` 请求体出现 `username` / `avatarUrl` 以外的字段名 → `4001`（2026-09-30 新增，契约 §3.5）
+- [x] `PUT /user/password` 旧密码错 → `4015`；成功后新密码可登录
+- [x] 库中存的是 bcrypt 哈希，不是明文（查库确认以 `$2a$10$` 开头、长度 60）
+- [x] 任一响应体中不出现 `passwordHash`
 
 ### 5.3 工程项
 
-- [ ] `cd backend && go build ./...` / `go vet ./...` / `go test ./...` 全绿
-- [ ] `go.mod` 中 `golang.org/x/crypto` 由 indirect 转 direct
-- [ ] 6 个端点的鉴权归属正确：1–3 挂 `api` 组，4–6 挂 `protected` 组
-- [ ] 未新增错误码；若确需新增，三集合一致性测试通过
+- [x] `cd backend && go build ./...` / `go vet ./...` / `go test ./...` 全绿
+- [x] `go.mod` 中 `golang.org/x/crypto` 由 indirect 转 direct
+- [x] 6 个端点的鉴权归属正确：1–3 挂 `api` 组，4–6 挂 `protected` 组
+- [x] 未新增错误码；若确需新增，三集合一致性测试通过
 
-> **本 spec 的验收不完整是已知的、被接受的**：§5.2 全部条目依赖 PostgreSQL，本机无法验证。这份清单在 PG 就位前不勾 ✅。
+> **§5.1 的勾不是"跑过了"就算**：八条逐条对到了 `internal/middleware/jwt_test.go` 的具体断言上（4010×2 / 4012 / 4011×2 在 :127-136，Context 两个值在 :52，`c.Abort()` 在 :147，响应体结构在 :153/:157）。
+>
+> **§5.2 里有一条只靠单测覆盖不到**：清空 `avatarUrl` 那条必须真连库才验得出来。这也是 PR B 当时只能标注"未做端到端验证"的原因——那份欠缺在本次冒烟里补上了。
 
 ## 6. 变更记录
 
 | 日期 | 变更 | 原因 |
 |---|---|---|
 | 2026-09-18 | 创建（草稿） | 承接 backend-skeleton §2.2 的移交；Week 1 里程碑 |
+| 2026-09-30 | §5.1 / §5.2 / §5.3 全部条目勾上；§5.2 新增两条（清空 `avatarUrl`、严格解码）；补上实测环境与「勾到具体断言」的说明 | 本机 PostgreSQL 16 就位，PR C 的端到端冒烟跑通。**§5.2 原先"在 PG 就位前不勾"的前提消失**，那份免责说明不能再留着 |
+| 2026-09-30 | §5.2 新增 `PUT /user/profile` 严格解码一条 | 该端点的请求体处理策略当天变了（契约 §3.5），spec 的验收清单得跟上 |
 
 ## 7. 待确认（定稿前清空）
 
 1. **契约 §13 冻结签署**仍是三方空白 —— 本功能把 §3 的 6 个端点从"纸面"变成"实现"，签署越晚，返工代价越大。三人共同事项。
 2. **路由挂载方式的群广播**：[API_CONTRACT.md](../../API_CONTRACT.md) §12 的「已广播」列**所有行仍为 ⬜**（含 2026-09-16 已发过的 `/health` 那条）。核实是漏勾还是漏发。
-3. **端到端验证的替代手段**：本机无 Docker / PostgreSQL。是否向成员 3 要一个可连的库（他的 `deploy/docker-compose.dev.yml` 本地可能起得来），待定。
+3. ~~**端到端验证的替代手段**：本机无 Docker / PostgreSQL。~~ —— **2026-09-30 已解**：本机原生装了 PostgreSQL 16，§5.2 直接在真库上验完，不必再向成员 3 借库。Docker 推迟到 Week 2 流式对话做完再装（Week 4 部署才真正需要）。
