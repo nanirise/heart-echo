@@ -1,0 +1,5 @@
+# 版本用 == 钉死：三人环境一致，避免「我这里能跑」。
+# 升级依赖时改这里并重跑 pytest，不要各自 pip install -U。
+fastapi==0.142.1
+uvicorn[standard]==0.54.0
+pydantic-settings==2.15.0
