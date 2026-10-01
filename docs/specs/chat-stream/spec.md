@@ -153,7 +153,11 @@ Go → Python 的请求体是 **snake_case**（`user_id` / `persona_id` / `messa
 
 **响应**：`text/event-stream`，事件同 §1.3 —— `delta` × N → `end`。
 
-> 🚧 **待补细则**：`ChatRequest` 的完整字段（是否带人格描述 / 历史消息轮数 N）由 prompt 组装需要什么决定，见 §5 待确认 #1。
+> **Week 2 只传这三个字段**（2026-09-30 定）。人格描述与历史消息**本阶段不传**，Python 侧 prompt 先是一段硬编字符串。
+> 为什么：生死线只验「能不能流」这一件事，而 [TECH_DESIGN §5.2](../../TECH_DESIGN.md) 的 prompt 结构还没实际调过，
+> 现在把 `persona` / `history` 的字段格式定死等于在没验证过的地方下注。Week 3 补这两个字段是**纯加法**，不改现有字段。
+
+**健康检查**：`GET /health` **不带** `X-Internal-Token` —— 它由 Go 侧探活调用（[契约 §11](../../API_CONTRACT.md) 明写"不带 `X-Internal-Token`"）。给它加鉴权会让 Go 的健康检查恒失败。
 
 ### 2.3 错误路径
 
@@ -166,7 +170,13 @@ Go → Python 的请求体是 **snake_case**（`user_id` / `persona_id` / `messa
 | DeepSeek 报错 / 超时（重试 2 次后仍失败） | `event: error` + `5001` |
 | assistant 落库失败 | `event: error` + `5003`（**不发 `done`**） |
 
-> 🚧 **待补细则**：`event: error` 发出后 **user message 已经落库了**，前端点重试会再 POST 一次 → **库里会多一条一模一样的 user 消息**。这个是不是要处理，见 §5 待确认 #2。
+**⚠️ 已知取舍：`error` 之后重试会留下重复的 user 消息**（2026-09-30 拍板，本阶段不处理）
+
+生成失败时 **user 消息已经落库了**（§1.5 事务 ①）。用户点重试 → 前端再 POST 一次 → **库里多一条一模一样的 user 消息**，而 AI 只会回一次。
+
+- 触发条件是「AI 生成失败 **且** 用户主动点重试」，演示主路径碰不到
+- 真要治需要**客户端幂等键**（前端生成一个 requestId，Go 落库前先查）——那是**契约变更**，要加字段 + 广播，不该塞进生死线的 PR 里
+- 记在这里的目的是：**以后有人发现重试后对话历史出现重复消息时，知道这是记录在案的取舍，不是 bug**
 
 ---
 
@@ -215,6 +225,11 @@ Go → Python 的请求体是 **snake_case**（`user_id` / `persona_id` / `messa
 
 > **第 4 步不过就不要往上查 Go。** 跨进程排查成本集中在 SSE，四层里哪层坏了要能一眼定位。
 
+> ⚠️ **Windows 上 curl 传不了内联中文**（2026-09-30 实测）。`curl.exe` 是原生程序，argv 会按 ANSI 代码页（中文 Windows 是 GBK）转一道，中文变成非法 UTF-8，服务端拿到 `400 Bad Request`。
+> 同样是中文 body：ASCII 内容 → `200`，中文内联 → `400`，中文写文件后 `--data-binary @file` → `200`。
+> **本机验收时把上面两条命令里的中文换成 `\uXXXX` 转义**（如"你好" = `"你好"`），或写成文件再 `--data-binary @body.json`。
+> 这是**本机 curl 的限制，不是服务端问题**——排查时别往 Python 侧找。
+
 **B · 契约与字段**
 
 - [ ] 事件只有三种，**没有 `emotion` 事件**、**没有 `end` 透传**
@@ -246,12 +261,13 @@ Go → Python 的请求体是 **snake_case**（`user_id` / `persona_id` / `messa
 
 ## 5. 待确认
 
-| # | 问题 | 建议 |
+| # | 问题 | 状态 |
 |---|---|---|
-| 1 | `ChatRequest` 的完整字段（要不要带人格描述 / 历史消息） | 由 [TECH_DESIGN §5.2](../../TECH_DESIGN.md) 的 prompt 结构反推：**人格字段与历史都要**，但历史取多少轮待定。Week 2 最小路径可先只带 `message`，人格与历史的拼接放 Python 侧（它需要自己查）——**但 Python 不碰 DB**，所以历史必须由 Go 传 |
-| 2 | `error` 后前端重试 → 库里多一条重复 user 消息 | 见 §2.3。建议**本阶段不处理**，在 spec 里记为已知取舍；真要治需要客户端幂等键，属契约变更 |
-| 3 | Python 的历史消息从哪来 | Go 传给 Python（`history: [{role, content}]`），还是 Python 回调 Go？**前者**——Python 不碰 DB 是既定架构 |
-| 4 | 内部接口的 `/internal` 前缀 | 已在 §1.7 定为**加**。需同步改 [成员 1 任务书 §6](../../dev/MEMBER_1_BACKEND_AI.md)，并广播给成员 3（他的 `ai-moment` spec 已是这个写法） |
+| 1 | `ChatRequest` 的完整字段（要不要带人格描述 / 历史消息） | ✅ **已定：Week 2 只传 `user_id` / `persona_id` / `message`**（§2.2）。人格与历史 Week 3 补 |
+| 2 | `error` 后前端重试 → 库里多一条重复 user 消息 | ✅ **已定：本阶段不处理，记为已知取舍**（§2.3） |
+| 3 | Python 的历史消息从哪来 | ⏸ **顺延到 Week 3**。方向已定：**必须由 Go 传**（Python 不碰 DB 是既定架构），Week 3 定字段形状 |
+| 4 | 内部接口的 `/internal` 前缀 | ✅ **已定：加**（§1.7）。⏳ 尚欠：同步改 [成员 1 任务书 §6](../../dev/MEMBER_1_BACKEND_AI.md)，并广播给成员 3（他的 `ai-moment` spec 已是这个写法） |
+| 5 | `ai-service/` 是新增顶层目录，[AGENTS §9](../../../AGENTS.md) 要求同一次提交里更新 `ci.yml` | ⏳ **待队长决定**。当前 `ci.yml` 只有 `frontend` / `backend` 两个 job；AGENTS §9 同时要求"发现不一致时提示我，不要自动修改"，故未动 |
 
 ---
 
