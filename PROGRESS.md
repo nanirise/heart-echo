@@ -11,9 +11,13 @@
   **冒烟中改了 `PUT /user/profile` 的解码策略（队长 2026-09-30 拍板"严格模式"）**：新增 `handler.bindStrictJSON`，请求体出现 `username` / `avatarUrl` 以外的键返回 `4001`（原为静默忽略并 200）。用一个"不认识的字段名 + 只改用户名（合法）+ 太短（校验仍在跑）"五条的对照测试钉住，并做了**两步反向注入**验证（去掉 `DisallowUnknownFields` → 恰好前两条红；去掉 `ValidateStruct` → 恰好"太短"那条红），活体 7 条用例与测试一致。**已写进契约 §3.5 + §12，需要广播给成员 2**（他们的 `ProfileView` 尚未开始写，时机赶得上）
 - 下一步（**按优先级**）：
   1. **[队长手动] 广播契约 §12 两条新行**（严格解码、SSE 事件分隔符）。这是**唯一剩余的手动收尾**。严格解码那条**有时效**——成员 2 的 `ProfileView` 还没开始写，现在说来得及；晚了他会照宽松解码写，然后发现 PUT 整个 user 对象返回 `4001`。
-  2. **写 SSE 的 spec** —— `docs/specs/chat-message/spec.md` 把 `POST /chat/stream` **明确排除在范围外**并标注「成员 1 的 Week 2 生死线」，所以这条链路的 spec **目前不存在**；按 §2.1（新增接口 + 跨模块）必须先有 spec，功能名待定（建议 `chat-stream`）。要先问「要什么 / 为什么 / 边界」再落笔。
-  3. **落 `chat-message` 的仓储层** —— `dto/chat_dto.go`、`repository/message_repo.go`、`service/chat_service.go`、`handler/chat_handler.go` **四个文件都不存在**，而 `chat-message/spec.md` 的文件归属表里写着归我，且它是 SSE 落库的**硬前置**（spec 原话：不先做，SSE 会顺手自己写一份 INSERT，两套写法必然对不上）。
-  4. **SSE 全链路 + `ai-service/`** —— `ai-service/` 整个目录尚未创建（`main.py` / `api/routes.py` / `core/config.py` / `core/llm_client.py` / `agents/dialogue_agent.py`）。这是 Week 2 生死线本体。
+  2. ~~**写 SSE 的 spec**~~ —— **2026-09-30 已落**：`docs/specs/chat-stream/{spec.md,plan.md}`（分支 `feature/chat-stream-spec`，commit `4f76e6c`，已推送）。spec **仍是骨架**（§4 验收条目与 §2.2 细则未补全），四条决策当天拍板：功能名 `chat-stream`、内部路径加 `/internal` 前缀、内部请求体 snake_case、Python 出 SSE 由 Go 逐事件转发。骨架里定下的五条独有决策：① 归属校验必须在写 SSE 响应头之前（契约 §5 的 `4001/4010/4043` 是**进 SSE 之前**的普通 4xx，`5001/5002` 是 **200 + `event: error`**）；② `\n\n` 两侧都要；③ **`done` 由 Go 补发**（`messageId` 是 Go 落库后的主键，Python 不知道，所以 Python 发内部事件 `end`，Go 吞掉后补发）；④ 落库事务两次不合并；⑤ `Flush()` 与 `X-Accel-Buffering` 是两个缓冲层。
+  3. **落 `chat-message` 的仓储层** —— `dto/chat_dto.go`、`repository/message_repo.go`、`service/chat_service.go`、`handler/chat_handler.go` **四个文件都不存在**（2026-09-30 实测确认），而 `chat-message/spec.md` 的文件归属表里写着归我，且它是 SSE 落库的**硬前置**（spec 原话：不先做，SSE 会顺手自己写一份 INSERT，两套写法必然对不上）。⏳ **开工前要先和成员 3 敲定这四个文件的归属**（`chat-message/spec.md` §6.3 #1 记为"待对齐"）。
+  4. **SSE 全链路** —— 分三个 PR（`plan.md` §1）。**PR 1 代码已完成**（branches 未提交，见下），PR 2 接 DeepSeek，PR 3 是 Go 侧。
+- **PR 1 进展（`ai-service/` 骨架 + 假流式，2026-09-30）**：目录此前不存在，现已创建 12 个文件——`.env.example`、`requirements.txt` / `requirements-dev.txt`（版本用 `==` 钉死）、`pytest.ini`、`app/{__init__,main}.py`、`app/core/{__init__,config,security}.py`、`app/api/{__init__,routes}.py`、`tests/test_routes.py`。
+  **实测通过**（本机 Python 3.11.9 + 独立 `.venv`）：`pytest` **6 passed**；`uvicorn` 起服务后 `curl -N` 实测 14 个 `event: delta` + 1 个 `event: end`，`cat -A` 确认行尾是 `$`（LF）**没有 `^M`**，即契约 §6 的 `\n\n` 在真实字节流上成立；响应头实测 `content-type: text/event-stream; charset=utf-8` + `cache-control: no-cache` + `x-accel-buffering: no` + `transfer-encoding: chunked`；`/health` 不带 token 返回 200（契约 §11 要求它能被 Go 探活）、流式接口不带 token 返回 401。
+  ⚠️ **测试证明不了"字是一个个到的"** —— `TestClient` 会把整个响应体缓冲完，所以 pytest 只能钉格式与鉴权，"真流式"只能靠 `curl -N` 人工看（spec §4 A 第 4 步）。
+  ⏳ **两件欠着**：① 分支未建、代码未提交；② `ai-service/` 是**新增顶层目录**，[AGENTS §9](../../AGENTS.md) 要求同一次提交里加 `ci.yml` job，而该节同时写着"提示我，不要自动修改"——**待队长决定**，`ci.yml` 目前只有 `frontend` / `backend` 两个 job。
   
   > **排期提示**：总纲 §7 写「Week 2 生死线（流式对话）若失守，立即砍掉记忆系统与主动消息」。以 2026-09-30 为基准，第 1 步（广播）当天可结，**第 2–4 步（SSE 全链路）是第一优先级**，Week 3/4 的内容（情绪分类、记忆 Agent、画像、ChromaDB）在生死线落地前**不要开工**。
   >
@@ -32,6 +36,8 @@
   9. **新发现（2026-09-20，本 PR 不修）**：`encoding/json` 匹配结构体字段时**优先精确匹配、匹配不上会退化成大小写不敏感匹配**。所以契约 §3.1 的 `username` 写成 `userName` 也能落进 `RegisterRequest.Username`——请求体这侧的 json tag 名**在 Go 这层钉不住**（`internal/dto/auth_dto_test.go` 里留了一条断言放行的用例记录这件事）。真正被钉住的是**响应体**的字段名（`TestUserResponseJSONTags` 逐字比对）。**成员 2**：前端按契约写 `username`，别依赖这个宽容
   10. **`SCHEMA_CHECK_DSN` 与 `DB_*` 两套连接配置并存**（2026-09-21 发现）：`cmd/migrate` 用前者、`cmd/server` 用后者，且前者不加载 `.env`、不在 `.env.example` 里。属**跨成员约定**，要队长拍板是否统一（`docs/specs/persona-model/plan.md:161` 已记为待定）。本轮不改代码，只在跑 migrate 时临时 export
   11. **bcrypt 72 字节的说法在 5 处仍是错的**（2026-09-21 更正，见下方「接口/数据结构变更」）：`docs/specs/auth-login/spec.md:116`（归我，待改）；`AGENTS.md:138`、`docs/API_CONTRACT.md:97`、`docs/TECH_DESIGN.md:853`、`docs/TECH_DESIGN.md:1079`（**共享文件，要广播**）。~~`docs/specs/frontend-auth-pages/plan.md:112`~~ —— **2026-09-30 复查已修**（a388820 改成「直接返回 `ErrPasswordTooLong`，是拒绝而非截断」，按 `origin/develop` 版核对过；这条原先是 6 处里的第 6 处）。结论（必须限制密码长度）不变，只是理由从「截断」改成「报 `ErrPasswordTooLong`」。**建议凑一次广播一起改**——反正契约 §12 的「已广播」列本来就全空，欠着
+  12. **新发现（2026-09-30，本机环境坑，不是代码问题）**：**Windows 上 `curl.exe` 传不了内联中文**。它会把 argv 按 ANSI 代码页（中文 Windows 是 GBK）转一道，中文变成非法 UTF-8。同一份 JSON body 实测：ASCII 内容 → `200`、中文内联 → `400 Bad Request`、中文写成文件再 `--data-binary @file` → `200`、中文用 `\uXXXX` 转义（纯 ASCII 的 JSON）→ `200`。
+  **影响面**：`docs/dev/MEMBER_1_BACKEND_AI.md` §3 的两条验收命令、spec §4 A 的两条 curl，里面都有内联中文，**在这台机器上照抄一定 400**。已在 `docs/specs/chat-stream/spec.md` §4 加了警告。**成员 2 / 成员 3 在 Windows 上做 curl 验收时会踩同一条**——排查时别往服务端找
 - 卡住：**无**。此前「本机无 PostgreSQL」的阻塞已解，Week 1 端到端验证跑通。
   仍**未决**（不阻塞，但欠着）：`cmd/migrate` 读的是**裸 `os.Getenv("SCHEMA_CHECK_DSN")`**，不加载 `.env`、也不在 `.env.example` 里；而 `cmd/server` 走的是 `DB_*` 系列。两套连接参数各说各的。**「该不该统一」待队长拍板**（记录在 `docs/specs/persona-model/plan.md:161`）。眼下跑迁移时临时 `export` 一个绕开，**没改代码**
   **Docker 推迟到 Week 2 流式对话做完再装**——Week 4 的部署/交付才真正需要它
