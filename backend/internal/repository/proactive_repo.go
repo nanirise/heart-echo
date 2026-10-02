@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -69,4 +70,64 @@ func (r *ProactiveRepo) UpdateOwned(
 	}
 	// 0 = WHERE 没匹配到（播种缺失或不是自己的行），不是"值没变"：同值 UPDATE 在 Postgres 里仍算匹配，返回 1
 	return res.RowsAffected, nil
+}
+
+// cstZone 是「当日零点」的固定时区：+08:00，硬编码常量（不读 config、不随进程本地时区）。
+// 容器与 CI 默认 UTC——跟随进程时区的"今日"会提前 8 小时跨日，与产品口径不符。
+var cstZone = time.FixedZone("UTC+8", 8*60*60)
+
+// todayMidnight 返回 +08:00 口径的今日零点。
+func todayMidnight() time.Time {
+	now := time.Now().In(cstZone)
+	return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, cstZone)
+}
+
+// CountTodayNudges 数该人设今天已注入的 [nudge] 条数，供日上限判定（spec §3.d）。
+// 查 chat_messages——is_nudge 列在该表，不在 proactive_settings；只数注入行、不数 assistant 回复。
+// ⚠️ 与 P1 日程提醒共用：两链路共用同一个日上限，计数口径不能各算各的。
+// 日界时区为硬编码 +08:00 常量（不读 config）；当前时刻取自进程时钟并显式换算到该时区，不依赖进程 TZ。
+// 本方法内的 time.Now() 是本仓库唯一允许的例外——『当日零点』是时区相关的业务逻辑，不宜外推给调用方；其他 repo 方法一律不得调 time.Now()。
+func (r *ProactiveRepo) CountTodayNudges(ctx context.Context, userID, personaID uint64) (int64, error) {
+	var n int64
+	err := r.db.WithContext(ctx).Model(&model.ChatMessage{}).
+		Where("persona_id = ? AND user_id = ? AND is_nudge = ? AND created_at >= ?",
+			personaID, userID, true, todayMidnight()).
+		Count(&n).Error
+	return n, err
+}
+
+// UpdateLastNudgeAt 记录最近一次主动触发的时间；唯一写入方是触发链路——前端与 PUT 都不写它（契约 §9 只读）。
+// 不并入 UpdateOwned：后者 map 的键集合已冻结为四个可改列，不含 last_nudge_at。
+// 未匹配行不报错：调用方（TriggerNow）刚经 Get 校验过归属，未匹配只可能是并发删除的竞态；
+// 记录列补不上不影响已注入的结果，调用方也没有可做的补救，故只回传基础设施错误。
+func (r *ProactiveRepo) UpdateLastNudgeAt(ctx context.Context, tx *gorm.DB, userID, personaID uint64) error {
+	return tx.WithContext(ctx).Model(&model.ProactiveSetting{}).
+		Where("persona_id = ? AND user_id = ?", personaID, userID).
+		Update("last_nudge_at", gorm.Expr("NOW()")).Error
+}
+
+// ScanRow 是定时任务扫描出的一行：一份配置 + 对应人设的最后消息时间（nil = 从未聊过）。
+type ScanRow struct {
+	UserID        uint64
+	PersonaID     uint64
+	IntervalMin   int
+	IntervalMax   int
+	DailyLimit    int
+	LastMessageAt *time.Time
+}
+
+// ListEnabledForScan 定时任务专用，跨用户扫描 enabled=true；与其他方法的双条件查询纪律不冲突，
+// 返回行不落库、不越权。调用方（proactive_job）负责逐行传 TriggerNow 做归属判定。
+// 本层不做任何时间过滤——空闲阈值等判定一律归 TriggerNow（spec §3），last_message_at 为 NULL 的行照常返回。
+func (r *ProactiveRepo) ListEnabledForScan(ctx context.Context) ([]ScanRow, error) {
+	var rows []ScanRow
+	err := r.db.WithContext(ctx).
+		Model(&model.ProactiveSetting{}).
+		Select("proactive_settings.user_id, proactive_settings.persona_id,"+
+			" proactive_settings.interval_min, proactive_settings.interval_max,"+
+			" proactive_settings.daily_limit, personas.last_message_at").
+		Joins("JOIN personas ON personas.id = proactive_settings.persona_id").
+		Where("proactive_settings.enabled = ?", true).
+		Scan(&rows).Error
+	return rows, err
 }
