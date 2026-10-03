@@ -38,6 +38,32 @@ export interface RegisterPayload {
 }
 
 /**
+ * 更新资料的请求体（契约 §3.5）。
+ *
+ * 只有这两个键 —— 该端点是严格解码的，多一个键就返回 4001。
+ * 把键集合交给类型而不是留在注释里，是为了让「别顺手 PUT 整个 user 对象」
+ * 变成编译期错误，而不是一句要人记得的叮嘱。
+ *
+ * avatarUrl 传 null 表示**清空**，不传这个键才表示**不要动**，两者不是一回事。
+ */
+export interface ProfilePatch {
+  username?: string
+  avatarUrl?: string | null
+}
+
+/**
+ * 修改密码的请求体（契约 §3.6）。
+ *
+ * 刻意不含「确认新密码」：那是纯前端字段，只用于防手误。
+ * 混进来现在不会报错（该端点不是严格解码端点），但等哪天加严就会全线 4001，
+ * 而且从现象上完全看不出与今天有关。
+ */
+export interface ChangePasswordPayload {
+  oldPassword: string
+  newPassword: string
+}
+
+/**
  * 登录态 store —— 全应用唯一的身份来源。
  *
  * 职责边界：
@@ -81,7 +107,7 @@ export const useAuthStore = defineStore('auth', {
       this.user = null
     },
 
-    // ── 业务动作 ──
+    // ── 业务动作：认证 ──
 
     /** 登录：成功后写入登录态（契约 §3.2） */
     async login(payload: LoginPayload): Promise<void> {
@@ -111,6 +137,44 @@ export const useAuthStore = defineStore('auth', {
      */
     async refresh(): Promise<string> {
       return refreshAccessToken()
+    },
+
+    // ── 业务动作：资料与密码 ──
+
+    /**
+     * 拉取最新的用户资料（契约 §3.4）。
+     *
+     * 为什么要重新拉：`user` 是**登录那一刻**的快照，并被持久化进 localStorage。
+     * 用户若在别处改过资料，本地这份就是旧的 —— 而在一个「查看并编辑自己资料」
+     * 的页面上显示旧值，是最难向用户解释的一类 bug。
+     */
+    async fetchProfile(): Promise<void> {
+      const user = await request.get<UserInfo>('/user/profile')
+      this.setUser(user)
+    },
+
+    /**
+     * 更新资料（契约 §3.5）。
+     *
+     * 入参类型被收窄到两个键，调用方在编译期就塞不进别的字段。
+     * 分工：「发哪些键」由视图决定（只有它知道用户改了什么），
+     * 「多发的键会被拒」由这里的类型和契约共同保证。
+     */
+    async updateProfile(patch: ProfilePatch): Promise<void> {
+      const user = await request.put<UserInfo>('/user/profile', patch)
+      this.setUser(user)
+    },
+
+    /**
+     * 修改密码（契约 §3.6）。
+     *
+     * 成功后本地登录态必须自己作废：服务端不主动失效旧 token，
+     * 不清的话用户会拿着一张对应旧密码的令牌继续用，以为密码没改成。
+     * 跳转登录页交给调用方（与 `logout()` 只清状态、不管跳转的分工一致）。
+     */
+    async changePassword(payload: ChangePasswordPayload): Promise<void> {
+      await request.put<null>('/user/password', payload)
+      this.clearAuth()
     },
   },
 

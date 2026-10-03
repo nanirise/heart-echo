@@ -42,7 +42,7 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/persona/PersonaView.vue'),
         meta: { title: '人设管理' },
       },
-      { path: 'profile', name: 'Profile', component: Placeholder, meta: { title: '用户画像' } },
+      { path: 'profile', name: 'Profile', component: () => import('@/views/profile/ProfileView.vue'), meta: { title: '用户画像' } },
       { path: 'moments', name: 'Moments', component: Placeholder, meta: { title: '朋友圈' } },
       { path: 'schedules', name: 'Schedule', component: Placeholder, meta: { title: '日程提醒' } },
     ],
