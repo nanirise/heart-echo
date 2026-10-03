@@ -6,7 +6,7 @@
 | 项 | 值 |
 |----|-----|
 | 分支 | `feature/frontend-profile-settings` |
-| 状态 | 🚧 进行中 |
+| 状态 | ✅ 已完成（待合并） |
 | 依赖 | `auth-login` PR C（已合并，PR #50） |
 | 规模 | 4 个源文件（2 新增 + 2 修改）+ 2 篇文档 |
 
@@ -17,12 +17,12 @@
 | # | 步骤 | 产物 | 状态 |
 |---|------|------|:----:|
 | 1 | 写 `spec.md` 与 `plan.md` | 2 篇文档 | ✅ |
-| 2 | `stores/auth.ts` 加 3 个 action + `ProfilePatch` | 修改 | ⏳ |
-| 3 | `views/profile/ProfileView.vue` | 新增 | ⏳ |
-| 4 | `views/profile/PasswordDialog.vue` | 新增 | ⏳ |
-| 5 | 路由表换 `component`（1 行） | 改 `router/index.ts` | ⏳ |
-| 6 | 自查：`typecheck` / `build` / 浏览器逐条过 spec §5.1 | 证据 | ⏳ |
-| 7 | 提交：文档一笔、代码一笔 | 2 笔 | ⏳ |
+| 2 | `stores/auth.ts` 加 3 个 action + `ProfilePatch` | 修改 | ✅ |
+| 3 | `views/profile/ProfileView.vue` | 新增 | ✅ |
+| 4 | `views/profile/PasswordDialog.vue` | 新增 | ✅ |
+| 5 | 路由表换 `component`（1 行） | 改 `router/index.ts` | ✅ |
+| 6 | 自查：`typecheck` / `build` / 浏览器逐条过 spec §5.1 | 证据 | ✅ 本机项见 spec §5.1；需联调的 7 项按约定留空 |
+| 7 | 提交：文档两笔、代码一笔 | 3 笔 | ✅ |
 
 **顺序理由**（两条都是踩过的）：
 
@@ -201,3 +201,8 @@ await authStore.changePassword({
 | 日期 | 步骤 | 说明 |
 |------|------|------|
 | 2026-10-02 | 1 | 写 `spec.md` + `plan.md`；分支自 `develop`（`09a0e7b`）切出 |
+| 2026-10-03 | 2–4 | 三个源文件落地：`stores/auth.ts`（3 个 action + `ProfilePatch` / `ChangePasswordPayload`）、`ProfileView.vue`、`PasswordDialog.vue` |
+| 2026-10-03 | 5 | `router/index.ts` 仅改 1 行：`component` 由 `Placeholder` 换成 `() => import('@/views/profile/ProfileView.vue')` |
+| 2026-10-03 | 6 | `vue-tsc --noEmit` 0 错误；`vite build` 通过（21.87s），产物含独立 `ProfileView-*.js` chunk，懒加载分割生效 |
+| 2026-10-03 | — | 本文 §3.7 修正：原文称「`MainLayout.vue` 侧栏已有头像兜底色块」，核实后全项目没有任何 `avatarUrl` 渲染，已重写 |
+| 2026-10-03 | 7 | 三笔提交：`0713ec8`（spec+plan）／`3b68ad0`（本文 §3.7 修正）／`4e632e9`（代码） |

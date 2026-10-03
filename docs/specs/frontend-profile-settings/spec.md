@@ -6,7 +6,7 @@
 | 项 | 值 |
 |----|-----|
 | 分支 | `feature/frontend-profile-settings` |
-| 状态 | 🚧 进行中 |
+| 状态 | ✅ 已完成（待合并） |
 | 依赖分支 | 无（自 `develop` `09a0e7b` 直接切出） |
 | 关联契约 | [API_CONTRACT](../../API_CONTRACT.md) §3.4 / §3.5 / §3.6 |
 | 关联设计 | [TECH_DESIGN](../../TECH_DESIGN.md) §3 |
@@ -47,7 +47,7 @@
 
 | 文件 | 职责 |
 |------|------|
-| `frontend/src/views/profile/ProfileView.vue` | 新增 · 账号资料卡片：头像预览 + 用户名输入 + 保存；按钮打开改密对话框 |
+| `frontend/src/views/profile/ProfileView.vue` | 新增 · 账号资料卡片：头像区（显示**已保存的**头像，为空则首字母色块）+ 用户名输入 + 保存；按钮打开改密对话框 |
 | `frontend/src/views/profile/PasswordDialog.vue` | 新增 · 改密对话框：原密码 + 新密码 + 确认；成功后清登录态并跳登录页 |
 | `frontend/src/stores/auth.ts` | 修改 · 新增 `fetchProfile` / `updateProfile` / `changePassword` 三个 action 与 `ProfilePatch` 类型 |
 | `frontend/src/router/index.ts` | 修改 · `/profile` 的 `component` 由 `Placeholder` 换成真实懒加载 import（1 行） |
@@ -117,8 +117,8 @@
 - [ ] `npm run build` 通过
 - [ ] 访问 `/profile` 渲染出资料表单（不再是「待实现」）
 - [ ] 未登录访问 `/profile` → 落到 `/login?redirect=%2Fprofile`
-- [ ] 头像预览：`avatarUrl` 为空时显示用户名首字色块，与左侧栏的兜底一致
-- [ ] 点「修改密码」→ 对话框打开；原密码或新密码为空时提交按钮禁用（empty 态）
+- [ ] 头像区：`avatarUrl` 为空时显示用户名首字色块（契约 §3.5 的要求；本支首次定义，项目内没有先例）。注意头像区显示的是**已保存的**值，不是输入框的实时值——填入新链接后需保存成功才会变
+- [ ] 点「修改密码」→ 对话框打开；原密码或新密码为空时点提交 → 逐条给出必填提示、**不发请求**（empty 态）
 - [ ] `newPassword` 7 位 / 含中文 / 含全角 → 逐条给出校验提示，**不发请求**
 - [ ] 新密码与确认框不一致 → 给出提示，**不发请求**
 - [ ] 后端不可达时 → 展示兜底文案，页面不崩、`console` 无未捕获异常
@@ -154,3 +154,4 @@
 | 日期 | 版本 | 变更内容 | 改动人 |
 |------|------|----------|--------|
 | 2026-10-02 | v1 | 初始版本 | 成员 2 |
+| 2026-10-03 | v1.1 | 措辞对齐实现：§2.1 与 §5.1 的「头像预览」改为「头像区（显示已保存的值）」；§5.1 的 empty 态由「提交按钮禁用」改为「点提交后校验并提示」；删去 §5.1 中「与左侧栏的兜底一致」这一失实引用（项目内没有任何 `avatarUrl` 渲染） | 成员 2 |
