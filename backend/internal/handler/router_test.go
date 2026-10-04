@@ -1,7 +1,7 @@
 // 覆盖 router.go 的装配结果 —— 全程不连数据库。
 //
 // 三件在代码里看不出来的事，只能靠断言：
-//   - persona 的 4 条路由挂上了没有、路径写错没有
+//   - 三个模块（persona / user / proactive）的路由挂上了没有、路径写错没有
 //   - protected 组上到底有没有 JWTAuth（与上一条是两回事：handler 自己也返 4010，
 //     "匿名请求被拒" 区分不出来。见各自测试的注释）
 //   - /health 有没有被误加上鉴权（它在白名单里，多一道 JWTAuth 会让 healthcheck 全线失败）
@@ -148,14 +148,30 @@ var userRoutes = []struct {
 	{"改密码", http.MethodPut, "/api/v1/user/password"},
 }
 
+// proactiveRoutes 是主动消息 settings 的 2 条路由（契约 §9）。
+// GET 带上 query：不带的话 personaId 的 binding:"required" 会在 handler 层就返回 4001，
+// 这条用例本意是"拦在 JWTAuth"，参数校验的味道会盖过它。
+var proactiveRoutes = []struct {
+	name   string
+	method string
+	path   string
+}{
+	{"读设置", http.MethodGet, "/api/v1/proactive/settings?personaId=1"},
+	{"改设置", http.MethodPut, "/api/v1/proactive/settings"},
+}
+
 // protectedRoutes 是挂在 protected 组下的全部路径，用来验"合法令牌能越过 JWTAuth"。
 // 只取 GET：其余方法在无 body 时会掉进 4001，把"停在数据库"这个判据搅混。
+//
+// proactive/settings 必须带 query：它的 personaId 是 binding:"required"，
+// 光秃秃地请求会在 handler 层就返回 4001，走不到数据库，与下面期望的 5003 对不上。
 var protectedRoutes = []struct {
 	name string
 	path string
 }{
 	{"personas", "/api/v1/personas"},
 	{"user/profile", "/api/v1/user/profile"},
+	{"proactive/settings", "/api/v1/proactive/settings?personaId=1"},
 }
 
 // TestPersonaRoutesRejectAnonymousRequests 逐条打一遍：不带 token 必须全部 4010。
@@ -196,6 +212,31 @@ func TestUserRoutesRejectAnonymousRequests(t *testing.T) {
 	r := newTestRouter(t)
 
 	for _, route := range userRoutes {
+		t.Run(route.name, func(t *testing.T) {
+			rec := doRequest(t, r, route.method, route.path, "")
+
+			if got, want := rec.Code, errcode.ErrUnauthorized.HTTPStatus(); got != want {
+				t.Fatalf("HTTP 状态码应为 %d，实际 %d，响应体 %q", want, got, rec.Body.String())
+			}
+			if got := decodeBody(t, rec).Code; got != int(errcode.ErrUnauthorized) {
+				t.Errorf("业务码应为 %d，实际 %d", errcode.ErrUnauthorized, got)
+			}
+		})
+	}
+}
+
+// TestProactiveRoutesRejectAnonymousRequests 逐条打一遍主动消息 settings 的 2 条路由：
+// 不带 token 必须全部 4010。
+//
+// ⚠️ 与 persona / user 那两条一样，**证不了鉴权在不在链上**：proactive_handler 的
+// currentUserID 取不到 userID 时自己也返 4010。它拦的是"路径拼错 / 压根没调
+// RegisterProactiveRoutes"——那时是 404，不是 4010。
+//
+// PUT 特意放进这张表：protectedRoutes 只覆盖 GET，光靠它证明不了 PUT 也挂在 protected 上。
+func TestProactiveRoutesRejectAnonymousRequests(t *testing.T) {
+	r := newTestRouter(t)
+
+	for _, route := range proactiveRoutes {
 		t.Run(route.name, func(t *testing.T) {
 			rec := doRequest(t, r, route.method, route.path, "")
 

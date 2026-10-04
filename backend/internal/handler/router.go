@@ -51,6 +51,11 @@ func NewRouter(cfg *config.Config, logger *zap.Logger, db *gorm.DB) *gin.Engine 
 	personaService := service.NewPersonaService(db)
 	RegisterPersonaRoutes(protected, NewPersonaHandler(personaService))
 
+	// 主动消息的 settings 两端（契约 §9）。/trigger 暂不挂：它等 TriggerNow 落定后
+	// 由 RegisterProactiveRoutes 里那行注释/TODO 自己开，不在这里另加。
+	proactiveService := service.NewProactiveService(db)
+	RegisterProactiveRoutes(protected, NewProactiveHandler(proactiveService))
+
 	// 用户资料三个端点（契约 §3.4-3.6）与 persona 一样需鉴权：
 	// 它们改的是"令牌里那个人"，没有 userID 入参，所以必须挂 protected 而不是 api。
 	RegisterUserRoutes(protected, authHandler)
