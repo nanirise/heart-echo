@@ -1,0 +1,8 @@
+**/node_modules
+**/dist
+**/__pycache__
+**/.venv
+**/.env
+pg_data
+chroma_data
+.git
