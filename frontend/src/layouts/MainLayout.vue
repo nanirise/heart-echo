@@ -9,6 +9,7 @@ const authStore = useAuthStore()
 const navItems = [
   { path: '/chat', label: '对话' },
   { path: '/personas', label: '人设' },
+  { path: '/proactive', label: '主动消息' },
   { path: '/profile', label: '我的画像' },
   { path: '/moments', label: '朋友圈' },
   { path: '/schedules', label: '日程提醒' },
