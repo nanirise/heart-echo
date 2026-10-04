@@ -66,3 +66,27 @@ jobs:
       - name: Test
         working-directory: backend
         run: go test ./...
+
+  # ai-service 是顶层服务目录，按 AGENTS §9 与 frontend / backend 同级各占一个 job。
+  # 不需要 services / env：测试用 monkeypatch 注入 AI_SERVICE_TOKEN 与 DEEPSEEK_API_KEY，
+  # 并把 DeepSeek 调用整个挡在门外——跑测试不碰网络、不烧 API 余额。
+  ai-service:
+    name: AI Service
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: |
+            ai-service/requirements.txt
+            ai-service/requirements-dev.txt
+      - name: Install
+        working-directory: ai-service
+        # requirements-dev.txt 首行是 -r requirements.txt，装这一份就够了。
+        run: pip install -r requirements-dev.txt
+      - name: Test
+        working-directory: ai-service
+        run: pytest
