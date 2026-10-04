@@ -1,7 +1,9 @@
 import * as realChat from '@/api/chat'
 import * as realPersona from '@/api/persona'
+import * as realProactive from '@/api/proactive'
 import * as mockChat from '@/api/mock/chat'
 import * as mockPersona from '@/api/mock/persona'
+import * as mockProactive from '@/api/mock/proactive'
 
 const useMock = import.meta.env.VITE_USE_MOCK === 'true'
 
@@ -12,3 +14,5 @@ export const chatApi = useMock ? mockChat : realChat
 export const listPersonas: typeof realPersona.listPersonas = useMock
   ? mockPersona.listPersonas
   : realPersona.listPersonas
+
+export const proactiveApi: typeof realProactive = useMock ? mockProactive : realProactive
