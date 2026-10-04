@@ -3,3 +3,7 @@
 fastapi==0.142.1
 uvicorn[standard]==0.54.0
 pydantic-settings==2.15.0
+
+# DeepSeek 的 /chat/completions 与 OpenAI 协议兼容，直接用官方 SDK 指到它的 base_url
+#（TECH_DESIGN §3.2）。自己拼 SSE 解析要处理多行 data、[DONE]、超时与重试，不值得。
+openai==3.24.0
