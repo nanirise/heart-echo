@@ -1,7 +1,7 @@
 # plan · 流式对话（chat-stream）
 
 > 对应 spec：[spec.md](spec.md) ｜ 分支：`feature/chat-stream-ai-service` → `feature/chat-stream-go`
-> 负责人：成员 1 ｜ 最后更新：2026-09-30
+> 负责人：成员 1 ｜ 最后更新：2026-10-04
 
 ---
 
@@ -12,7 +12,7 @@
 | # | 分支 | 覆盖 spec | 内容 | 状态 |
 |---|---|---|---|---|
 | **0** | （`chat-message` 的分支） | — | `message_repo.Create` | ⛔ **硬前置，不属本 spec** |
-| **1** | `feature/chat-stream-ai-service` | §1.7、§2.2 | `ai-service/` 骨架 + `X-Internal-Token` 校验 + **假流式**（不接 DeepSeek） | ⬜ |
+| **1** | `feature/chat-stream-ai-service` | §1.7、§2.2 | `ai-service/` 骨架 + `X-Internal-Token` 校验 + **假流式**（不接 DeepSeek） | ✅ **PR #51 已合并（2026-10-01）** |
 | **2** | `feature/chat-stream-llm` | §1.3、§2.2 | 接 DeepSeek 真流式（`core/llm_client.py`） | ⬜ |
 | **3** | `feature/chat-stream-go` | §1.1–§1.5、§2.1、§2.3 | Go 侧 `ai_client.go` + `chat_dto.go` + `chat_service.go` + `chat_handler.go` + 挂载 | ⬜ |
 
@@ -35,6 +35,8 @@ curl -N -X POST http://localhost:8000/internal/chat/stream \
 ```
 **看到 `event:` / `data:` 逐条输出**（不是最后一次性吐出）。这一步不过，PR 2/3 都不用开工。
 
+> ⚠️ **Windows 上这条命令里的中文要换成 ASCII** —— `curl.exe` 的 argv 走 ANSI 代码页（中文 Windows 是 GBK），内联中文会变成非法 UTF-8、服务端返回 `400`。把 `"你好"` 换成 `"hello"`，或写成文件后 `--data-binary @body.json`。详见 [spec §4](spec.md) 与 [PROGRESS 遗留 12](../../../PROGRESS.md)。
+
 ---
 
 ## 2. 步骤
@@ -42,8 +44,8 @@ curl -N -X POST http://localhost:8000/internal/chat/stream \
 | # | 步骤 | 涉及文件 | 状态 |
 |---|---|---|---|
 | 0 | 与成员 3 敲定 `chat_service.go` / `chat_handler.go` 的文件归属（[spec §3.2](spec.md)） | — | ⬜ |
-| 1 | `ai-service/` 骨架：`main.py` / `api/routes.py` / `core/config.py` / `core/security.py` + `.env.example` | 新增 5 个 | ⬜ |
-| 2 | `/internal/chat/stream` 假流式 + `/health` | `api/routes.py` | ⬜ |
+| 1 | `ai-service/` 骨架：`main.py` / `api/routes.py` / `core/config.py` / `core/security.py` + `.env.example` | 新增 5 个 | ✅ PR #51 |
+| 2 | `/internal/chat/stream` 假流式 + `/health` | `api/routes.py` | ✅ PR #51 |
 | 3 | `core/llm_client.py` 接 DeepSeek 流式 | 新增 | ⬜ |
 | 4 | Go 侧 `AIClient` 接口 + HTTP 实现 | `internal/service/ai_client.go` | ⬜ |
 | 5 | `StreamChatRequest` DTO | `internal/dto/chat_dto.go` | ⬜ |
@@ -111,3 +113,5 @@ for each event from Python:
 | 日期 | 事件 |
 |---|---|
 | 2026-09-30 | spec / plan 骨架创建。四条决策已拍板：功能名 `chat-stream`、内部路径加 `/internal` 前缀、内部请求体 snake_case、Python 出 SSE 由 Go 逐事件转发（结尾 `done` 由 Go 补发） |
+| 2026-10-01 | **PR 1 合并（PR #51）**：`ai-service/` 骨架 + 假流式，12 文件 / 274 行。实测 `pytest` 6 passed、`curl -N` 14×`delta` + 1×`end`、行尾纯 LF（`cat -A` 无 `^M`）。合并前把 `core/config.py` 的 `extra="ignore"` 改回默认 `forbid` |
+| 2026-10-04 | 交接核对：PR 1 的四个 commit 均在 `origin/develop` 上（合并点 `09a0e7b`），`ai-service/` 12 文件在库。本文件的状态表当时漏勾，本次补上 |

@@ -1,4 +1,3 @@
-import asyncio
 import json
 from collections.abc import AsyncIterator
 
@@ -6,6 +5,7 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from app.core.llm_client import LLMUnavailableError, stream_reply
 from app.core.security import verify_internal_token
 
 router = APIRouter()
@@ -41,17 +41,32 @@ def _sse(event: str, data: str) -> str:
     return f"event: {event}\ndata: {data}\n\n"
 
 
-# PR 1 的假回复：不调 DeepSeek，先把「能不能流」和「AI 能不能答」拆开验（plan §1.1）。
-_FAKE_REPLY = "好呀，我在这儿呢，慢慢说。"
+# 生成失败时下发的错误码，与 backend/pkg/errcode 的 ErrLLMFailed 同码同文案（契约 §2：一 code 一 msg）。
+# Python 与 Go 没有共享常量的地方，改一处必须改两处 —— 这是这条链路唯一的跨语言常量。
+_ERR_LLM_FAILED = 5001
+_ERR_LLM_FAILED_MESSAGE = "AI 回复生成失败，请稍后重试"
 
-# 每个字的间隔。打太快看不出是流式，太慢联调时干等。
-_DELTA_INTERVAL_SECONDS = 0.1
 
+async def _chat_stream(message: str) -> AsyncIterator[str]:
+    """把 LLM 的文本段转成 delta 事件；生成失败转成 error 事件。
 
-async def _fake_stream() -> AsyncIterator[str]:
-    for char in _FAKE_REPLY:
-        yield _sse("delta", json.dumps({"text": char}, ensure_ascii=False))
-        await asyncio.sleep(_DELTA_INTERVAL_SECONDS)
+    失败时**不发 end**：end 的语义是"生成完了，你可以落库了"，两者同时出现会让 Go
+    对着一句半截话去落库。
+    """
+    try:
+        async for text in stream_reply(message):
+            yield _sse("delta", json.dumps({"text": text}, ensure_ascii=False))
+    except LLMUnavailableError:
+        # 已经吐出去的 delta 收不回来 —— 前端会先留半句话再叠一条错误提示。
+        # 这就是"重试只能在流开始前做"的代价（spec §2.3 的已知取舍）。
+        yield _sse(
+            "error",
+            json.dumps(
+                {"code": _ERR_LLM_FAILED, "message": _ERR_LLM_FAILED_MESSAGE},
+                ensure_ascii=False,
+            ),
+        )
+        return
 
     # 内部终止事件。Go 收到它 → 落库 assistant 消息 → 自己发 done {"messageId": N}。
     # messageId 是 Go 侧落库后的主键，Python 不知道也不该知道，所以这里不带。
@@ -66,10 +81,10 @@ async def stream_chat(req: ChatRequest) -> StreamingResponse:
     - Cache-Control 防止中间层缓存事件流
     - X-Accel-Buffering: no 关掉 Nginx 的 proxy_buffering（AGENTS §4.5）
 
-    本阶段 req 不参与生成，只做校验 —— 人格与历史消息 Week 3 才接进来。
+    req.user_id / persona_id 本阶段不参与生成，只做校验 —— 人格与历史消息 Week 3 才接进来（spec §2.2）。
     """
     return StreamingResponse(
-        _fake_stream(),
+        _chat_stream(req.message),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
