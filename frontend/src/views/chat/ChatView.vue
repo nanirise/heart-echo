@@ -134,7 +134,7 @@ function handleRetry(): void {
           >
             <span class="item-name">
               {{ persona.name }}
-              <span v-if="chatStore.unread[persona.id] === true" class="item-dot" />
+              <span v-if="chatStore.unreadPersonaIds.has(persona.id)" class="item-dot" />
             </span>
             <span class="item-meta">亲密度 {{ persona.familiarity }}</span>
           </RouterLink>

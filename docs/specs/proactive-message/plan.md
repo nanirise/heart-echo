@@ -23,7 +23,7 @@
 | 3 | `internal/handler/proactive_handler.go` + `RegisterProactiveRoutes(rg, h)` | 步 2 | 三个端点可达；缺 `personaId` → `4001`、越权 → `4043`（与 [proactive-setting §2](../proactive-setting/spec.md) 预写逐条比对） | ⬜ |
 | 4 | `internal/service/proactive_job.go`：按 `PROACTIVE_JOB_INTERVAL` 周期扫描，逐个调步 2 的 `TriggerNow` | 步 2；`backend/.env.example` 补上变量（spec §7 第 2 条） | 日志可见每轮扫描与各判定跳过原因；把 interval 调成 1m 实测一个静置人设被触发 | ⬜ |
 | 5 | `router.go`：加一行挂载步 3 的 `RegisterProactiveRoutes` 到 **protected** 组 | 步 3 | 带 Token 可访问、免 Token `4010` | ⬜ |
-| 6 | 前端：`src/api/proactive.ts`（复用 `request.ts`）+ 设置页（3 控件）+ 侧栏红点 + 触发按钮隐藏入口 | 成员 2 的 `request.ts` / 路由挂载点；步 3、5 | 浏览器实测：改 3 控件并持久化、刷新后回读一致；侧栏红点在有未触发机会时出现、进入对话后消失 | ⬜ |
+| 6 | 前端：`src/api/proactive.ts`（复用 `request.ts`）+ 设置页（3 控件）+ 侧栏红点 + 触发按钮隐藏入口 | 成员 2 的 `request.ts` / 路由挂载点；步 3、5 | 浏览器实测：改 3 控件并持久化、刷新后回读一致；侧栏红点在有未触发机会时出现、进入对话后消失 | 🟡 设置页 / 红点已落盘（Mock 实测通过）；触发按钮未做——待触发链路合并后做 |
 
 **表下注（落地时必须遵守的四点）**：
 
@@ -85,3 +85,5 @@ grep -n "daily_limit\|enabled" docs/specs/proactive-message/spec.md docs/specs/p
 |------|------|
 | 2026-10-02 | spec / plan 初版落盘（草稿）；分支待切，代码未开工 |
 | 2026-10-02 | 分支已切（未 commit）；按成员 1 回复修订：步 1 方法化（`CountTodayNudges` / `UpdateLastNudgeAt` / `ListEnabledForScan`）、步 2 措辞、spec §3.d 已确认、spec §7 第 1 条已选 A·待签名 |
+| 2026-10-04 | 步 6 前端（Mock 先行）落盘于 `feature/frontend-proactive-settings`（未提交）：`types/proactive.ts`、`api/proactive.ts` + `api/mock/proactive.ts`（`VITE_USE_MOCK` 切换）、`views/proactive/ProactiveSettingsView.vue`（3 控件 + 人设切换 + 三态）、侧栏红点（`lastMessageAt` 与本地已读位比对，localStorage 持久化）。`vue-tsc` / `npm run build` 通过，Mock 浏览器实测通过。挂载点：前端 `router/index.ts` 与 `MainLayout.vue` 各加一行（成员 2 的文件，PR 里请留意）。真接口待 `router.go` 挂载后联调 |
+| 2026-10-04 | **触发按钮未做**（步 6 的隐藏入口项）：`POST /proactive/trigger` 尚未挂载（步 3、5 未完成），待触发链路合并后按 [TECH_DESIGN §5.4](../../TECH_DESIGN.md#54-主动消息实现) 补 |
