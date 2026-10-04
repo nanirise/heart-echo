@@ -148,6 +148,8 @@ async function loadPage(): Promise<void> {
 
 async function handlePersonaChange(personaId: number): Promise<void> {
   if (loadingSettings.value) {
+    // el-select 的 v-model 已经改成新人，直接 return 会「下拉显示新人、表单还是旧配置」且不退回
+    selectedPersonaId.value = loadedPersonaId.value
     return
   }
 

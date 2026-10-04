@@ -1,6 +1,7 @@
 import { toErrorMessage } from '@/api/error'
 import { defineStore } from 'pinia'
 import { chatApi, listPersonas } from '@/api/mock'
+import { useAuthStore } from '@/stores/auth'
 import type { ChatMessage } from '@/types/chat'
 import type { Persona } from '@/types/persona'
 
@@ -77,6 +78,8 @@ export const useChatStore = defineStore('chat', {
      * 本机与服务端时钟有偏差时，本地时间会让红点永远亮着或永远不亮。
      */
     readAt: {} as Record<number, string>,
+    /** 本地 readAt 归属的账号 id；换账号后 readAt 清空，避免跨账号串已读位 */
+    uid: null as number | null,
   }),
 
   getters: {
@@ -138,17 +141,17 @@ export const useChatStore = defineStore('chat', {
      * store 不该知道路由的存在，落点交给 ChatView 处理。
      */
     async loadPersonas(): Promise<void> {
+      const auth = useAuthStore()
+
+      // 换账号后清空已读位。不做在登出处是为了避免 auth ↔ chat 循环依赖
+      if (this.uid !== (auth.user?.id ?? null)) {
+        this.readAt = {}
+        this.uid = auth.user?.id ?? null
+      }
+
       try {
         const result = await listPersonas()
         this.personas = result.list
-
-        // 正在看的那条对话，屏幕上的就是最新的 —— 直接记为已读，
-        // 否则「聊完切走再回来」会给自己亮红点（以及两端时钟偏差会留下假红点）
-        const current = result.list.find((item) => item.id === this.currentPersonaId)
-
-        if (current !== undefined && current.lastMessageAt !== null) {
-          this.markRead(current.id, current.lastMessageAt)
-        }
       } catch (error) {
         this.errorMessage = toErrorMessage(error, '网络异常，请检查网络后重试')
       }
@@ -335,9 +338,10 @@ export const useChatStore = defineStore('chat', {
     },
   },
 
-  // 只持久化已读位：人设列表每次进页面都重拉，没必要落盘
+  // 只持久化已读位与它归属的账号：uid 必须一起落盘，否则刷新后 uid 为 null，
+  // 首次 loadPersonas 会把刚恢复的 readAt 当成「换了账号」清空
   persist: {
     key: 'heart-echo-chat',
-    paths: ['readAt'],
+    paths: ['readAt', 'uid'],
   },
 })
