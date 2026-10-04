@@ -34,6 +34,24 @@ func TestLoadRejectsShortJWTSecret(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsNonPositiveProactiveJobInterval(t *testing.T) {
+	// time.NewTicker 对非正数 interval 会 panic，所以在启动期必须拦下
+	for _, interval := range []string{"0", "-5m"} {
+		t.Run(interval, func(t *testing.T) {
+			setRequired(t, strings.Repeat("a", jwtSecretMinLength))
+			t.Setenv("PROACTIVE_JOB_INTERVAL", interval)
+
+			_, err := Load()
+			if err == nil {
+				t.Fatalf("PROACTIVE_JOB_INTERVAL=%s 时必须报错", interval)
+			}
+			if !strings.Contains(err.Error(), "PROACTIVE_JOB_INTERVAL") {
+				t.Errorf("错误信息应含字段名 PROACTIVE_JOB_INTERVAL，实际: %v", err)
+			}
+		})
+	}
+}
+
 func TestLoadUsesDefaults(t *testing.T) {
 	setRequired(t, strings.Repeat("a", jwtSecretMinLength))
 

@@ -23,6 +23,9 @@ type Config struct {
 	Database DatabaseConfig
 	JWT      JWTConfig
 	AI       AIConfig
+
+	// ProactiveJobInterval 是主动消息定时扫描的周期（定时任务一律在 Go 侧，AGENTS §4.8）
+	ProactiveJobInterval time.Duration `env:"PROACTIVE_JOB_INTERVAL" envDefault:"5m"`
 }
 
 // ServerConfig 是 HTTP 服务本身的配置。
@@ -91,6 +94,13 @@ func (c Config) validate() error {
 		return fmt.Errorf(
 			"config: JWT_SECRET must be at least %d characters, got %d",
 			jwtSecretMinLength, len(c.JWT.Secret),
+		)
+	}
+	// time.NewTicker 对非正数 interval 会 panic，所以在启动期拦下
+	if c.ProactiveJobInterval <= 0 {
+		return fmt.Errorf(
+			"config: PROACTIVE_JOB_INTERVAL must be positive, got %s",
+			c.ProactiveJobInterval,
 		)
 	}
 	return nil
