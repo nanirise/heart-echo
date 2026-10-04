@@ -34,6 +34,23 @@ jobs:
     name: Backend
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: heart_echo
+          POSTGRES_PASSWORD: change_me
+          POSTGRES_DB: heart_echo
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U heart_echo"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      JWT_SECRET: ci_only_test_secret_at_least_32_chars_ok
+      AI_SERVICE_TOKEN: ci_only_test_token
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
