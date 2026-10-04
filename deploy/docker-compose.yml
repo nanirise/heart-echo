@@ -1,0 +1,91 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [heart_echo_net]
+
+  # ===== 阶段二：接入向量检索时启用 =====
+  # chromadb:
+  #   image: chromadb/chroma:latest
+  #   restart: always
+  #   volumes:
+  #     - chroma_data:/chroma/chroma
+  #   networks: [heart_echo_net]
+
+  # ===== 明确不做：Redis =====
+  # 本项目 QPS 极低，没有缓存需求。加它只会多一个要运维的容器。
+
+  ai-service:
+    build: ../ai-service
+    restart: always
+    env_file: .env
+    # python:3.11-slim 没有 wget，用 python 自带的 urllib 探活
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks: [heart_echo_net]
+
+  backend:
+    build: ../backend
+    restart: always
+    env_file: .env
+    environment:
+      DB_HOST: postgres
+      # backend 只读 DB_*；密码唯一来源是 POSTGRES_PASSWORD，避免两处各写一份
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_NAME: ${POSTGRES_DB}
+      AI_SERVICE_URL: http://ai-service:8000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ai-service:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/v1/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks: [heart_echo_net]
+
+  # 前端没有独立容器：由 deploy/Dockerfile 的 node 阶段构建后 COPY 进 nginx 镜像
+  nginx:
+    build:
+      context: ..                 # 构建上下文是仓库根目录（需访问 frontend/ 与 deploy/）
+      dockerfile: deploy/Dockerfile
+    restart: always
+    ports:
+      - "80:80"
+      # - "443:443"
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks: [heart_echo_net]
+
+volumes:
+  pg_data:
+  # chroma_data:   # 阶段二接入 ChromaDB 时启用
+
+networks:
+  heart_echo_net:
+    driver: bridge
