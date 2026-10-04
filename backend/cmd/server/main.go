@@ -18,6 +18,7 @@ import (
 
 	"github.com/nanirise/heart-echo/backend/internal/config"
 	"github.com/nanirise/heart-echo/backend/internal/handler"
+	"github.com/nanirise/heart-echo/backend/internal/service"
 	"github.com/nanirise/heart-echo/backend/pkg/logger"
 )
 
@@ -40,6 +41,13 @@ func main() {
 	if err != nil {
 		appLogger.Fatal("初始化数据库连接失败", zap.Error(err))
 	}
+
+	// 主动消息定时扫描（AGENTS §4.8：定时任务一律在 Go 侧）；
+	// 与手动端点共用同一个 TriggerNow（spec §4）。
+	jobCtx, cancelJob := context.WithCancel(context.Background())
+	proactiveSvc := service.NewProactiveService(db)
+	proactiveJob := service.NewProactiveJob(proactiveSvc, cfg.ProactiveJobInterval, appLogger)
+	go proactiveJob.Run(jobCtx)
 
 	srv := &http.Server{
 		// 不写 host 就是监听 0.0.0.0。容器里必须如此，
@@ -66,6 +74,9 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 	appLogger.Info("收到退出信号，开始关闭")
+
+	// 先停后台定时任务再收 HTTP：Run 循环监听 jobCtx，cancel 后退出
+	cancelJob()
 
 	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()

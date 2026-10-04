@@ -118,3 +118,14 @@ func validateSettings(req *dto.UpdateSettingsRequest) error {
 	}
 	return nil
 }
+
+// TriggerNow 是触发链路的唯一入口：手动端点与定时任务都调它（spec §4）。
+// 五层判定顺序见 spec §3；注入 [nudge] 走成员 1 的 ChatService，
+// 签名待定（spec §7 第 1 条已选 A）。
+func (s *ProactiveService) TriggerNow(ctx context.Context, userID, personaID uint64) error {
+	// TODO: await ChatService 签名——实现五层判定 + 注入 [nudge] + 更新 last_nudge_at
+	// 判定顺序：① enabled ② 空闲达阈值（[intervalMin, intervalMax] 内随机） ③ 当日 nudge 数 < dailyLimit
+	//          ④ 1 小时内无用户消息（排除 is_nudge=true 行） ⑤ 全通过 → 注入 → 更新
+	// 签名到之前，本函数返回未实现错误，避免被 job 误当成"未触发"吞掉。
+	return errcode.New(errcode.ErrInternal)
+}
