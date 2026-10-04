@@ -947,12 +947,13 @@ PROACTIVE_JOB_INTERVAL=5m
 **`ai-service/.env.example`**
 
 ```bash
-AI_SERVICE_PORT=8000
+PORT=8000                     # 字段名是 PORT，不是 AI_SERVICE_PORT（本节原先写错；写错会启动失败，见下方警告）
+HOST=0.0.0.0                  # 容器内必须是 0.0.0.0；写 127.0.0.1 时本机 curl 正常但容器间连接被拒（AGENTS §4.10）
 AI_SERVICE_TOKEN=internal_token_change_me    # 必须与 backend 一致
 
 DEEPSEEK_API_KEY=sk-xxxxxxxxxxxxxxxx
 DEEPSEEK_BASE_URL=https://api.deepseek.com
-DEEPSEEK_MODEL=deepseek-chat
+DEEPSEEK_MODEL=deepseek-flash
 LLM_TIMEOUT_SECONDS=60
 LLM_MAX_TOKENS=512             # 开发期调小，控制成本
 
@@ -967,6 +968,10 @@ SCHEDULE_PARSE_BACKEND=rule    # rule | llm（P1：时间解析，做不动就�
 # CHROMA_HOST=localhost          # 容器内用服务名 chroma，不是 localhost
 # CHROMA_PORT=8001               # 宿主机映射端口；容器内仍是 8000，避开 AI 服务的 8000
 ```
+
+> ⚠️ **不要往 `.env` 里写上面之外的键。** `Settings` 用 pydantic-settings 的默认 `extra=forbid`：`.env` 出现未知键时服务**启动即报错**（`Extra inputs are not permitted`，并指出键名），不会静默忽略。
+>
+> 因此「阶段一/阶段二开关」那几个变量（`EMOTION_BACKEND` / `MEMORY_BACKEND` / `MEMORY_EXTRACT_BACKEND` / `SCHEDULE_PARSE_BACKEND`）在对应功能落地、字段真的加进 `Settings` 之前，**先别写进 `.env`**——写了服务起不来。
 
 **`frontend/.env.example`**
 
