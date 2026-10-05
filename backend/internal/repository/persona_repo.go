@@ -110,3 +110,23 @@ func (r *PersonaRepo) ExistsOwnedByUser(ctx context.Context, userID, personaID u
 	}
 	return count > 0, nil
 }
+
+// TouchLastMessageAt 把该人设的"最近对话时间"推到当前时刻。
+//
+// 加入方：成员 1（chat_service 的消息落库链路），2026-10-05。本方法只做这一件事，
+// 不改动本文件原有的任何行为。
+//
+// 写入方唯一：消息落库链路（SSE 对话 / 主动消息 / 日程提醒）。前端与 PUT 都不写它。
+// 必须与消息 INSERT 在同一个事务里 —— 拆成两条独立语句会留下
+// "消息进去了、会话列表的排序时间没动"的半截状态。
+//
+// 用数据库的 NOW() 而不是 Go 的 time.Now()：这个列会和 SQL 里的
+// now() - last_message_at 做比较（主动消息的空闲判定），
+// 两个时间必须来自同一个时钟，否则应用与数据库有时差时阈值会整体偏移。
+func (r *PersonaRepo) TouchLastMessageAt(
+	ctx context.Context, tx *gorm.DB, userID, personaID uint64,
+) error {
+	return tx.WithContext(ctx).Model(&model.Persona{}).
+		Where("id = ? AND user_id = ?", personaID, userID).
+		Update("last_message_at", gorm.Expr("NOW()")).Error
+}

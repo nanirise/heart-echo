@@ -56,6 +56,13 @@ func NewRouter(cfg *config.Config, logger *zap.Logger, db *gorm.DB) *gin.Engine 
 	proactiveService := service.NewProactiveService(db)
 	RegisterProactiveRoutes(protected, NewProactiveHandler(proactiveService))
 
+	// 流式对话（契约 §6）。AIClient 在这里建、只建一次：它是 Go 侧调 Python 的
+	// 唯一出入口，Week 3 的 emotion / memory 复用同一个实例（TECH_DESIGN §5.0）。
+	// 不放进 NewChatService 内部，是因为 service 层不碰配置。
+	aiClient := service.NewAIClient(cfg.AI)
+	chatService := service.NewChatService(db, aiClient)
+	RegisterChatRoutes(protected, NewChatHandler(chatService))
+
 	// 用户资料三个端点（契约 §3.4-3.6）与 persona 一样需鉴权：
 	// 它们改的是"令牌里那个人"，没有 userID 入参，所以必须挂 protected 而不是 api。
 	RegisterUserRoutes(protected, authHandler)
