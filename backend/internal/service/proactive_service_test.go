@@ -3,6 +3,9 @@
 //   - 落库行为（enabled=false 真的写进去了）必须连真库：全部读写包在一个回滚事务里，开发库分毫不动。
 //
 // 连不上（CI 无 Postgres 服务、本机容器没起）即 Skip：如实跳过，不假装覆盖。
+//
+// 构造 ProactiveService 时 chat 一律传 nil：本文件只覆盖 settings 读写，不触碰 TriggerNow。
+// 触发链路（五层判定）的用例需要一个假的 AIClient，尚未落盘。
 package service
 
 import (
@@ -95,7 +98,7 @@ func TestProactiveGetSettings(t *testing.T) {
 	tx := proactiveTestTx(t)
 	ctx := context.Background()
 	repo := repository.NewProactiveRepo(tx)
-	svc := NewProactiveService(tx)
+	svc := NewProactiveService(tx, nil)
 
 	me := seedProactiveUser(t, tx, "pro_get_me")
 	other := seedProactiveUser(t, tx, "pro_get_other")
@@ -170,7 +173,7 @@ func mustErr(_ *dto.SettingsResponse, err error) error { return err }
 func TestProactiveUpdateSettingsValidation(t *testing.T) {
 	// 用**不连库**的 db：校验全在碰库之前，这些用例一个都不该走到 Begin。
 	// 哪个用例返回了 5003 而不是 4001，就说明它漏过了校验 —— 死库在这里是探针。
-	svc := NewProactiveService(testDB(t))
+	svc := NewProactiveService(testDB(t), nil)
 	ctx := context.Background()
 
 	valid := func() *dto.UpdateSettingsRequest {
@@ -233,7 +236,7 @@ func TestProactiveUpdateSettingsPersists(t *testing.T) {
 	tx := proactiveTestTx(t)
 	ctx := context.Background()
 	repo := repository.NewProactiveRepo(tx)
-	svc := NewProactiveService(tx)
+	svc := NewProactiveService(tx, nil)
 
 	me := seedProactiveUser(t, tx, "pro_put_me")
 	other := seedProactiveUser(t, tx, "pro_put_other")
