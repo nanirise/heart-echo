@@ -8,8 +8,9 @@
 | 项 | 值 |
 |----|-----|
 | 功能名 | `proactive-message` |
-| 分支 | `feature/backend-proactive-message`（已切，尚未 commit） |
-| 状态 | 🟡 草稿（spec / plan 初版落盘，代码未开工） |
+| 版本 | v1.5 |
+| 分支 | `feature/backend-proactive-trigger`（已切，本分支 3 个 commit，未推） |
+| 状态 | 🟡 联调中（settings 两端 + 前端已交付；触发链路 TriggerNow / `POST /proactive/trigger` 已落盘，待装配合并） |
 | **本功能范围** | 触发判定 `TriggerNow` + 定时扫描 `proactive_job.go` + `GET/PUT /proactive/settings` + `POST /proactive/trigger` + 前端设置页与侧栏红点 |
 | 负责人 | 成员 3 |
 | 关联任务书 | [成员 3 任务书 §4](../../dev/MEMBER_3_DATA_MOMENTS_DEPLOY.md)（Week 3 主动消息任务表）、§8（自检） |
@@ -41,7 +42,7 @@
 2. **`personaId` 必传**：`GET /proactive/settings`、`POST /proactive/trigger` 缺 `personaId` 一律 `4001`，**在参数层拦下**——缺参时还没有任何归属可供校验，不能当 `personaId = 0` 查库（会命中空集，把调用方的 bug 伪装成正常态）。口径来自契约 §9 的 2026-09-20 变更记录。
 3. **资源越权 → `4043`**：人设不是自己的 / 不存在 / 播种缺失，三者一律 `4043`「人设不存在」，**同码同文案**；不返回 403（会暴露该 `persona_id` 存在，而它是全局自增的、可被顺序试号探测），也不返回 `4030`（那是功能越权，本模块无此场景）。（[AGENTS §4.3](../../../AGENTS.md)）
 4. **`lastNudgeAt` 只读**：`PUT` 忽略、前端不写；**唯一的写入方是本功能的触发链路**（注入成功后更新 `last_nudge_at`）。它是记录列，不参与 §3 的判定（② 看的是 `personas.last_message_at`）。（契约 §9；[proactive-setting §1.5](../proactive-setting/spec.md)）
-5. **定时任务跑在 Go 侧**：`proactive_job.go` 在 backend 内按 `PROACTIVE_JOB_INTERVAL` 周期扫描（默认 5m，[TECH_DESIGN §4.6](../../TECH_DESIGN.md)），**不放 ai-service**（Python APScheduler 一律不用）——放错服务会静默失效（[AGENTS §4.8](../../../AGENTS.md)）。该变量目前**尚未落地**到 `backend/.env.example`，见 §7 第 2 条。
+5. **定时任务跑在 Go 侧**：`proactive_job.go` 在 backend 内按 `PROACTIVE_JOB_INTERVAL` 周期扫描（默认 5m，[TECH_DESIGN §4.6](../../TECH_DESIGN.md)），**不放 ai-service**（Python APScheduler 一律不用）——放错服务会静默失效（[AGENTS §4.8](../../../AGENTS.md)）。该变量**已落地**，见 §7 第 2 条。
 
 > 以上之外的内容（DTO 指针、`intervalMin < intervalMax` 等跨字段校验、`RowsAffected == 0 → 4043`）已在 [proactive-setting §1–§2](../proactive-setting/spec.md) 定过，本文件不重复。
 
@@ -76,7 +77,7 @@ e. **⑤ 之后空闲计时会自然重置**：注入的 `[nudge]` 与生成的�
 - **两个入口、同一段逻辑**：`POST /proactive/trigger`（手动）与 `service/proactive_job.go`（按 `PROACTIVE_JOB_INTERVAL` 扫描）**都调同一个 `TriggerNow`**——不复制、不变体。这是 [MASTER §4.2](../../dev/MASTER.md) 的 🚨 硬性要求：定时任务最短 30 分钟起步，答辩现场等不起；「同一个」的含义是**演示通过 = 线上逻辑通过**（[MEMBER_3 §4](../../dev/MEMBER_3_DATA_MOMENTS_DEPLOY.md)：不是作弊，是标准可测试性设计）。
 - **差异只在「谁来点名」**：定时任务对全部 `enabled = true` 的人设逐个判；手动对**一个** `personaId` 判。判定与注入不分叉。
 - **手动端点的出入口**（契约 §9）：请求 `{personaId}`（必传 → `4001`；归属 → `4043`；生成失败 → `5001`）；响应 `{messageId, content, createdAt}` 对应**生成的回复**（不是 `[nudge]` 注入行——与日程触发的返回同构，见 [schedule §4.1](../schedule/spec.md)）。
-- ⚠️ **未定义行为（待对齐，不要私自挑一种）**：判定未通过时手动端点返回什么——契约 §9 只给了成功形态 `{messageId, content, createdAt}` 与错误码 `4001 / 4043 / 5001`，**没有「判定未通过」的表达**。把 `4043` 复用成「被拦」会让「人设不是你的」与「今天到限额了」不可区分；返回成功形态则是假消息。落地前群里对齐。
+- ✅ **已定（2026-10-05 群内确认）**：判定未通过时手动端点返回 **200 + 空结果**，即 `{messageId: 0, content: "", createdAt: null}`。实现口径：`TriggerNow` 返回 `(*NudgeResult, error)`，**`nil + nil` 即判定未通过**（不是错误），handler 据此返回空结果，前端按 `messageId === 0` 区分。不新增表达的原因：契约 §9 只给了成功形态与 `4001 / 4043 / 5001`，复用 `4043` 会让「人设不是你的」与「今天到限额了」不可区分，新增错误码则违反 §5「不做的事」。
 - **演示依赖**（引 [成员 3 任务书 §8](../../dev/MEMBER_3_DATA_MOMENTS_DEPLOY.md) 自检「演示前实测可用」）：演示的人设必须**满足 ② 与 ④**——现场刚聊完就点按钮会被自己的防骚扰拦下；用演示前灌好的、静置超阈值且 1 小时内无用户消息的人设（或把 interval 调到最小值后静置）。
 - **前端入口**按 [TECH_DESIGN §5.4](../../TECH_DESIGN.md) 的形态：对话页**隐藏按钮**（连点标题 5 次 / 仅开发环境显示），不做常规 UI 按钮——它服务于演示与自测，不是用户功能。
 
@@ -96,14 +97,15 @@ e. **⑤ 之后空闲计时会自然重置**：注入的 `[nudge]` 与生成的�
 
 ## 6. 变更记录
 
-| 日期 | 变更 | 已广播 |
-|---|---|---|
-| 待填 | 初版 | ⬜ |
+| 日期 | 版本 | 变更 | 已广播 |
+|---|---|---|---|
+| 待填 | v1.0 | 初版 | ⬜ |
+| 2026-10-05 | v1.5 | ① §4 判定未通过时的返回（`TriggerNow` 返回类型）由「待对齐」改为已定：`nil + nil` = 未通过，handler 返 200 + 空结果 `{messageId: 0, content: "", createdAt: null}`；② §7 第 1 条由「待方法签名」改为「已选 A + 签名已落地」；③ §7 第 2 条（含 §2 第 5 条指引）由「未落地」改为「已落地」 | ⬜ |
 
 ---
 
 ## 7. 待确认
 
-1. **[nudge] 注入归谁**：**已选 A（成员 1 2026-10-02 回复）**：`TriggerNow` 调成员 1 的 `ChatService` 注入（`[nudge]` 写入语义单点真相在 `chat_service`）。**待方法签名**：方法名 / 参数（是否带触发来源）/ 返回值（是否直接给 `{messageId, content, createdAt}`）/ 同步或异步——签名到前 [plan 步 2](plan.md) 调用点留 `// TODO: await ChatService 签名` 占位。
-2. **`PROACTIVE_JOB_INTERVAL` 落地**：[MASTER §3 #4b](../../dev/MASTER.md) 列为成员 3 交接物；PROGRESS.md 成员 1 遗留第 3 条确认 `backend/.env.example` 目前只有占位注释、**无变量本身**，`deploy/.env.example` 缺失。本功能要读它，先补上（含 deploy 透传）。
+1. **[nudge] 注入归谁**：**已选 A（成员 1，2026-10-02）**：`TriggerNow` 调 `ChatService.InjectNudge(ctx, NudgeInput) (*NudgeResult, error)`（`[nudge]` 写入语义单点真相在 `ChatService`）。签名 2026-10-05 已落地于 [chat_service.go](../../../backend/internal/service/chat_service.go)；返回的 `NudgeResult{MessageID, Content, CreatedAt}` 与契约 §9 的 `{messageId, content, createdAt}` 一一对应。
+2. **`PROACTIVE_JOB_INTERVAL` 落地**：**✅ 已结案（2026-10-05）**——`backend/.env.example:41` 与 `deploy/.env.example:26` 均有 `PROACTIVE_JOB_INTERVAL=5m`（含 deploy 透传）。[MASTER §3 #4b](../../dev/MASTER.md) 列为成员 3 交接物，交接完成。
 3. **bigserial 现状核实**：`grep backend/internal/model/` 确认 10 个 model 均已按 `type:bigint` + `autoIncrement` 写（引胶囊「外键禁止自增」条目；同款机制见 [persona-model §1.3](../persona-model/spec.md)）。

@@ -96,6 +96,41 @@ func (r *ProactiveRepo) CountTodayNudges(ctx context.Context, userID, personaID 
 	return n, err
 }
 
+// IsIdleOverThreshold 回答触发判定 ②：该人设已静默达/超过 thresholdSeconds 秒了吗。
+//
+// 减法必须放在 SQL 里用数据库的 NOW()：last_message_at 由数据库时钟写入
+// （persona_repo.TouchLastMessageAt），用 Go 的 time.Now() 做减法会在应用与数据库有时差时
+// 让阈值整体偏移，且偏移量随部署环境变——查不出原因。
+// last_message_at IS NULL（从未聊过）不满足条件 → false，与 spec §3.b「没有空闲起点，不触发」一致。
+// 双条件（persona_id + user_id）不可省：手动触发链路上 user_id 来自 Token（AGENTS §4.3）。
+func (r *ProactiveRepo) IsIdleOverThreshold(
+	ctx context.Context, userID, personaID uint64, thresholdSeconds int,
+) (bool, error) {
+	var n int64
+	err := r.db.WithContext(ctx).Model(&model.Persona{}).
+		Where("id = ? AND user_id = ? AND last_message_at IS NOT NULL"+
+			" AND EXTRACT(EPOCH FROM (NOW() - last_message_at)) >= ?",
+			personaID, userID, thresholdSeconds).
+		Count(&n).Error
+	return n > 0, err
+}
+
+// HasRecentUserMessage 回答触发判定 ④：该人设最近 1 小时内有没有真人发的消息。
+//
+// is_nudge = false 一个条件都不能少：注入的 [nudge] 也是 role='user'，
+// 不排除的话上一次主动消息会把自己的注入当成「用户刚回复过」，把下一次判定卡死（spec §3.c）。
+// role 过滤同样要带：assistant 回复的 is_nudge 也是 false，只按它排会把 AI 自己说的话算成用户消息。
+// 1 小时窗口是 spec §3 ④ 定的固定口径，没有对应配置列；比较用数据库的 NOW()，理由同上。
+func (r *ProactiveRepo) HasRecentUserMessage(ctx context.Context, userID, personaID uint64) (bool, error) {
+	var n int64
+	err := r.db.WithContext(ctx).Model(&model.ChatMessage{}).
+		Where("persona_id = ? AND user_id = ? AND role = ? AND is_nudge = ?"+
+			" AND created_at >= NOW() - INTERVAL '1 hour'",
+			personaID, userID, model.RoleUser, false).
+		Count(&n).Error
+	return n > 0, err
+}
+
 // UpdateLastNudgeAt 记录最近一次主动触发的时间；唯一写入方是触发链路——前端与 PUT 都不写它（契约 §9 只读）。
 // 不并入 UpdateOwned：后者 map 的键集合已冻结为四个可改列，不含 last_nudge_at。
 // 未匹配行不报错：调用方（TriggerNow）刚经 Get 校验过归属，未匹配只可能是并发删除的竞态；

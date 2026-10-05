@@ -52,7 +52,9 @@ func (j *ProactiveJob) scanOnce(ctx context.Context) {
 	j.logger.Debug("proactive scan: candidates", zap.Int("count", len(rows)))
 
 	for _, row := range rows {
-		if err := j.svc.TriggerNow(ctx, row.UserID, row.PersonaID); err != nil {
+		// 只看错误：判定未通过是 (nil, nil) 的正常态；触发成功产出的回复不属于本层
+		// （前端从会话列表自己读），本层不接管它的去向。
+		if _, err := j.svc.TriggerNow(ctx, row.UserID, row.PersonaID); err != nil {
 			// TriggerNow 返回错误 = 基础设施失败（DB / 生成调用），不是"判定不通过"
 			// 判定不通过是正常态，不应产生错误（spec §3.a）
 			j.logger.Error("proactive trigger failed",
