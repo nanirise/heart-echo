@@ -3,7 +3,9 @@ package service
 import (
 	"context"
 	"errors"
+	"math/rand"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 
 	"github.com/nanirise/heart-echo/backend/internal/dto"
@@ -19,16 +21,26 @@ const (
 	settingsDailyMax    = 10
 )
 
-// ProactiveService 是主动消息 settings 两个端点的业务逻辑。
-// 持有 *gorm.DB 而不是只把 db 交给仓储：PUT 要包事务（UPDATE + 回读同成同败，proactive-setting §2.2）。
+// nudgeContent 是主动消息注入的固定正文（spec §1）：内容只有这个标记，
+// "说什么"由聊天链路按人格与历史生成，本模块不写模板消息。
+const nudgeContent = "[nudge]"
+
+// ProactiveService 是主动消息的业务逻辑：settings 两个端点 + 触发链路 TriggerNow。
+// 持有 *gorm.DB 而不是只把 db 交给仓储：PUT 与 last_nudge_at 的写入都要包事务
+// （proactive-setting §2.2 / 契约 §9 只读列的唯一写入方）。
 type ProactiveService struct {
 	db   *gorm.DB
 	repo *repository.ProactiveRepo
+	// chat 是注入 [nudge] 的出口。主动消息不自己写 chat_messages，也不自己调 AI：
+	// [nudge] 的写入语义单点真相在 ChatService（spec §7 第 1 条已选 A）。
+	chat *ChatService
 }
 
 // NewProactiveService 构造服务，并组装它依赖的仓储。
-func NewProactiveService(db *gorm.DB) *ProactiveService {
-	return &ProactiveService{db: db, repo: repository.NewProactiveRepo(db)}
+// chat 由调用方传入：它要读 config（AI_SERVICE_URL / TOKEN），service 层不碰配置，
+// 且两条链路（定时任务 / 手动端点）必须共用注入路径。
+func NewProactiveService(db *gorm.DB, chat *ChatService) *ProactiveService {
+	return &ProactiveService{db: db, repo: repository.NewProactiveRepo(db), chat: chat}
 }
 
 // GetSettings 读当前用户的某份配置（契约 §9 GET）。
@@ -120,12 +132,108 @@ func validateSettings(req *dto.UpdateSettingsRequest) error {
 }
 
 // TriggerNow 是触发链路的唯一入口：手动端点与定时任务都调它（spec §4）。
-// 五层判定顺序见 spec §3；注入 [nudge] 走成员 1 的 ChatService，
-// 签名待定（spec §7 第 1 条已选 A）。
-func (s *ProactiveService) TriggerNow(ctx context.Context, userID, personaID uint64) error {
-	// TODO: await ChatService 签名——实现五层判定 + 注入 [nudge] + 更新 last_nudge_at
-	// 判定顺序：① enabled ② 空闲达阈值（[intervalMin, intervalMax] 内随机） ③ 当日 nudge 数 < dailyLimit
-	//          ④ 1 小时内无用户消息（排除 is_nudge=true 行） ⑤ 全通过 → 注入 → 更新
-	// 签名到之前，本函数返回未实现错误，避免被 job 误当成"未触发"吞掉。
-	return errcode.New(errcode.ErrInternal)
+//
+// 三种出口（spec §3）：
+//   - 全通过 → (*NudgeResult, nil)
+//   - 判定未通过 → (nil, nil)，这是正常态：每 5 分钟扫一次，绝大多数人设都不触发，
+//     不产生错误码、不记 ERROR 日志，只留一条 debug（spec §3.a）；
+//   - DB / 生成调用失败 → (nil, err)，照常上抛。把基础设施错误吞成"未触发"，
+//     会让演示时"点了没反应"变成常态。
+func (s *ProactiveService) TriggerNow(ctx context.Context, userID, personaID uint64) (*NudgeResult, error) {
+	// ① 配置存在且开启。这一查同时是归属闸门：不是自己的 / 不存在的 / 播种缺失
+	// 都落进同一个 not found，一律 4043，不可区分（spec §2.3）。
+	setting, err := s.repo.Get(ctx, userID, personaID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errcode.New(errcode.ErrPersonaNotFound)
+		}
+		return nil, errcode.Wrap(errcode.ErrDBFailed, err)
+	}
+	if !setting.Enabled {
+		logTriggerSkip(personaID, "disabled")
+		return nil, nil
+	}
+
+	// ② 空闲达阈值。阈值每次调用在 [intervalMin, intervalMax] 分钟内取一次随机值
+	// （spec §3.b 允许按次取）：静默越久命中概率越高，频率由 ③ 的日上限兜底。
+	// 比较放在仓储里用数据库时钟做，见 IsIdleOverThreshold 的说明。
+	idle, err := s.repo.IsIdleOverThreshold(
+		ctx, userID, personaID, randomIdleThresholdSeconds(setting.IntervalMin, setting.IntervalMax),
+	)
+	if err != nil {
+		return nil, errcode.Wrap(errcode.ErrDBFailed, err)
+	}
+	if !idle {
+		logTriggerSkip(personaID, "idle_threshold")
+		return nil, nil
+	}
+
+	// ③ 当日已注入条数 < dailyLimit。口径是 chat_messages 里 is_nudge=true 的条数，
+	// 与 P1 日程提醒共用同一个上限（spec §3.d）——两套链路各数各的会变成两个防骚扰口径。
+	sent, err := s.repo.CountTodayNudges(ctx, userID, personaID)
+	if err != nil {
+		return nil, errcode.Wrap(errcode.ErrDBFailed, err)
+	}
+	if sent >= int64(setting.DailyLimit) {
+		logTriggerSkip(personaID, "daily_limit")
+		return nil, nil
+	}
+
+	// ④ 最近 1 小时没有用户消息。排除注入行是这条的全部要害（spec §3.c）。
+	recent, err := s.repo.HasRecentUserMessage(ctx, userID, personaID)
+	if err != nil {
+		return nil, errcode.Wrap(errcode.ErrDBFailed, err)
+	}
+	if recent {
+		logTriggerSkip(personaID, "recent_user_message")
+		return nil, nil
+	}
+
+	// ⑤ 全过：注入 [nudge] → 走聊天链路生成 → 落库，同步拿回生成的回复。
+	// 生成失败原样上抛（5001 / 5002），绝不降级成"未触发"——否则演示时表现为
+	// "点了没反应"，而日志里一条错都没有（spec §3.a）。
+	res, err := s.chat.InjectNudge(ctx, NudgeInput{
+		UserID:    userID,
+		PersonaID: personaID,
+		Content:   nudgeContent,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// last_nudge_at 只是记录列（契约 §9 只读），不参与任何判定；但它写不进去同样是 DB 故障，
+	// 照常上抛——补不上记录却返回成功，会让"已触发过"这件事在库里查不到。
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return s.repo.UpdateLastNudgeAt(ctx, tx, userID, personaID)
+	})
+	if err != nil {
+		return nil, errcode.Wrap(errcode.ErrDBFailed, err)
+	}
+
+	zap.L().Debug("proactive: triggered",
+		zap.Uint64("personaID", personaID), zap.Uint64("messageID", res.MessageID))
+	return res, nil
+}
+
+// randomIdleThresholdSeconds 在 [intervalMin, intervalMax] 分钟内取一个随机阈值（spec §3.b）。
+//
+// 每次调用取一次（不是每个空闲段取一次）：同一个空闲段在不同轮扫描里阈值不同，
+// 手动连续点触发也各有各的机会，演示不必等一个固定的"倒霉阈值"。
+// hi <= lo 时直接返回下界：数据被手工改坏也不能让 rand.Intn 收到非正数而 panic。
+func randomIdleThresholdSeconds(intervalMin, intervalMax int) int {
+	lo, hi := intervalMin*60, intervalMax*60
+	if hi <= lo {
+		return lo
+	}
+	return lo + rand.Intn(hi-lo+1)
+}
+
+// logTriggerSkip 记一条判定未通过的 debug 日志（spec §3 末尾：演示前排障全靠它，
+// 否则只能看到"没触发"三个字，分不清是关着、没到点还是到限额了）。
+//
+// 走 zap 的全局 logger：main.go 启动时 ReplaceGlobals(appLogger)，未替换时它是 no-op、
+// 日志静默丢弃——这条链路没有别的 logger 注入点（构造签名不带 logger）。
+func logTriggerSkip(personaID uint64, reason string) {
+	zap.L().Debug("proactive: not triggered",
+		zap.Uint64("personaID", personaID), zap.String("reason", reason))
 }

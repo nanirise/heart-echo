@@ -267,3 +267,108 @@ func TestListEnabledForScan(t *testing.T) {
 		t.Fatalf("enabled=false 的行不应出现在扫描结果里，实际 %d 条", len(byPersona[disabled.ID]))
 	}
 }
+
+func TestIsIdleOverThreshold(t *testing.T) {
+	tx := testTx(t)
+	ctx := context.Background()
+
+	me := seedUser(t, tx, "idle_me")
+	other := seedUser(t, tx, "idle_other")
+	neverTalked := seedPersona(t, tx, me.ID, "没聊过")
+	idle := seedPersona(t, tx, me.ID, "静默十分钟")
+	theirs := seedPersona(t, tx, other.ID, "别人的")
+
+	// 基准时间用 SQL 的 NOW() 写：本方法的比较也在 SQL 里做。事务内 NOW() 是常量
+	// （事务开始时刻），播种与判定看到的是同一个值，恰好 600 秒的边界因此是确定性的，
+	// 不会被应用与数据库的微小偏差咬到。
+	for _, personaID := range []uint64{idle.ID, theirs.ID} {
+		if err := tx.Exec(
+			"UPDATE personas SET last_message_at = NOW() - INTERVAL '10 minutes' WHERE id = ?",
+			personaID,
+		).Error; err != nil {
+			t.Fatalf("写 last_message_at 失败: %v", err)
+		}
+	}
+
+	repo := NewProactiveRepo(tx)
+	cases := []struct {
+		name              string
+		userID, personaID uint64
+		thresholdSeconds  int
+		want              bool
+	}{
+		// ② 的语义是"达到/超过"：600 秒整必须触发，601 秒不触发——写成"落在区间内"会把边界判反
+		{"恰好达到阈值（600 秒）→ 触发", me.ID, idle.ID, 600, true},
+		{"超过阈值（599 秒）→ 触发", me.ID, idle.ID, 599, true},
+		{"未达阈值（601 秒）→ 不触发", me.ID, idle.ID, 601, false},
+		// spec §3.b：没有空闲起点。阈值取 0 也不触发，防止哪天被写成 COALESCE/取反形式后静默放行
+		{"从未聊过（last_message_at IS NULL）→ 不触发", me.ID, neverTalked.ID, 0, false},
+		// 双条件各自生效：任何一边写成单条件，这两条里必有一条变红
+		{"跨用户：我的 userID + 别人的 persona → 不触发", me.ID, theirs.ID, 600, false},
+		{"跨用户：别人的 userID + 我的 persona → 不触发", other.ID, idle.ID, 600, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := repo.IsIdleOverThreshold(ctx, tc.userID, tc.personaID, tc.thresholdSeconds)
+			if err != nil {
+				t.Fatalf("IsIdleOverThreshold 出错: %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("阈值 %d 秒应返回 %v，实际 %v", tc.thresholdSeconds, tc.want, got)
+			}
+		})
+	}
+}
+
+func TestHasRecentUserMessage(t *testing.T) {
+	tx := testTx(t)
+	ctx := context.Background()
+
+	me := seedUser(t, tx, "recent_me")
+	other := seedUser(t, tx, "recent_other")
+
+	// 每个反例一条独立人设、里头只放该种消息：判定是整个 persona 一个布尔，
+	// 混在一条人设上就分不清是哪条消息被算进去了。
+	withRealUser := seedPersona(t, tx, me.ID, "有真人消息")
+	withNudgeOnly := seedPersona(t, tx, me.ID, "只有注入行")
+	withAssistantOnly := seedPersona(t, tx, me.ID, "只有 AI 回复")
+	withOldUser := seedPersona(t, tx, me.ID, "真人消息在两小时前")
+	silent := seedPersona(t, tx, me.ID, "没有任何消息")
+	crossUser := seedPersona(t, tx, me.ID, "混入他人消息")
+
+	recent := time.Now().Add(-30 * time.Minute)
+	old := time.Now().Add(-2 * time.Hour)
+
+	seedMessage(t, tx, me.ID, withRealUser.ID, model.RoleUser, false, recent)
+	// ④ 的要害：注入的 [nudge] 也是 role='user'，上一次主动消息不能把下一次判定卡死（spec §3.c）
+	seedMessage(t, tx, me.ID, withNudgeOnly.ID, model.RoleUser, true, recent)
+	// role 过滤的另一半：assistant 回复的 is_nudge 也是 false
+	seedMessage(t, tx, me.ID, withAssistantOnly.ID, model.RoleAssistant, false, recent)
+	seedMessage(t, tx, me.ID, withOldUser.ID, model.RoleUser, false, old)
+	seedMessage(t, tx, other.ID, crossUser.ID, model.RoleUser, false, recent)
+
+	repo := NewProactiveRepo(tx)
+	cases := []struct {
+		name    string
+		persona uint64
+		want    bool
+	}{
+		{"30 分钟前的真人消息 → 命中", withRealUser.ID, true},
+		{"只有注入的 [nudge] → 不命中", withNudgeOnly.ID, false},
+		{"只有 assistant 回复 → 不命中", withAssistantOnly.ID, false},
+		{"真人消息在 1 小时窗口外 → 不命中", withOldUser.ID, false},
+		{"一条消息都没有 → 不命中", silent.ID, false},
+		{"同 persona、别人的 user_id → 不命中", crossUser.ID, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := repo.HasRecentUserMessage(ctx, me.ID, tc.persona)
+			if err != nil {
+				t.Fatalf("HasRecentUserMessage 出错: %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("应返回 %v，实际 %v", tc.want, got)
+			}
+		})
+	}
+}
