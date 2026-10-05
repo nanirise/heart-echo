@@ -4,17 +4,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/nanirise/heart-echo/backend/internal/dto"
 	"github.com/nanirise/heart-echo/backend/internal/service"
 	"github.com/nanirise/heart-echo/backend/pkg/errcode"
+	"github.com/nanirise/heart-echo/backend/pkg/response"
 )
 
-// ChatHandler 是 SSE 对话端点的 HTTP 层。
+// ChatHandler 是对话链路的 HTTP 层：SSE 流式对话 + 历史消息分页读。
 //
-// 它只做三件事：取 userID、绑请求体、把 service 交出的事件写成 SSE。
+// 它只做三件事：取 userID、绑请求体、把结果写成 SSE 或 JSON。
 // 所有业务规则（归属、落库、错误码）都在 service 里，handler 不重复判断——
 // 同一套规则写两遍，迟早只改一处。
 type ChatHandler struct {
@@ -28,12 +30,13 @@ func NewChatHandler(chatService *service.ChatService) *ChatHandler {
 
 // RegisterChatRoutes 由 router.go 汇总调用。
 //
-// 目前只有 /stream 一个端点。chat-message spec 的
-// GET /chat/personas/:personaId/messages 属于另一个功能，不在这里提前加。
+// 两个端点：/stream 是本功能（chat-stream）的；/personas/:personaId/messages 是
+// chat-message spec 的 R 端点，一直标着 ⬜ 没做，导致前端刷新后历史全区（2026-10-05 补）。
 func RegisterChatRoutes(rg *gin.RouterGroup, h *ChatHandler) {
 	g := rg.Group("/chat")
 	{
 		g.POST("/stream", h.Stream)
+		g.GET("/personas/:personaId/messages", h.ListMessages)
 	}
 }
 
@@ -69,6 +72,35 @@ func (h *ChatHandler) Stream(c *gin.Context) {
 	for ev := range ch {
 		writeChatEvent(c, ev)
 	}
+}
+
+// ListMessages 处理 GET /chat/personas/:personaId/messages（契约 §5，chat-message spec §3.2）。
+//
+// 它是本功能唯一一个"响应是普通 JSON"的端点——与 /stream 相反，这里的错误能正常回 4xx。
+func (h *ChatHandler) ListMessages(c *gin.Context) {
+	userID, ok := currentUserID(c)
+	if !ok {
+		_ = c.Error(errcode.New(errcode.ErrUnauthorized))
+		return
+	}
+
+	// 解析失败就把 personaID 留成 0 传下去，**不写特判**（chat-message spec §3.2 第 6 条）：
+	// WHERE id = 0 AND user_id = ? 天然不命中，与"这不是你的人设"收敛到同一条 4043 出口。
+	// 契约给本端点只列了 4043，凭空多一个 4001 就是契约漂移；少一个分支也少一处不一致。
+	personaID, _ := strconv.ParseUint(c.Param("personaId"), 10, 64)
+
+	// 解析失败同样按未传处理（=0），交给 ClampPage 收敛成 1 / 20。
+	// 分页参数不产生错误码：pageSize 上限必须有，否则一次拉全表。
+	page, _ := strconv.Atoi(c.Query("page"))
+	pageSize, _ := strconv.Atoi(c.Query("pageSize"))
+
+	result, err := h.chatService.ListMessages(c.Request.Context(), userID, personaID, page, pageSize)
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	response.Success(c, *result)
 }
 
 // writeSSEHeaders 写 SSE 的四项响应头并立刻把它们推出去。

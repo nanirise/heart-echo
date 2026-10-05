@@ -5,8 +5,9 @@ DeepSeek 的 /chat/completions 与 OpenAI 协议兼容（TECH_DESIGN §3.2），
 """
 
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from functools import lru_cache
+from typing import Protocol
 
 from openai import AsyncOpenAI
 
@@ -14,18 +15,78 @@ from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-# Week 2 的 prompt 是一段硬编字符串：人格描述与历史消息 Week 3 才接进来（chat-stream spec §2.2）。
-# 必须告诉模型 [nudge] 的含义，否则它会把系统注入的 "[nudge] ..." 当成用户真的这么打字，
-# 回复里跟着出现 "[nudge]" 这种不该给用户看见的标记（TECH_DESIGN §5.4 流程 5）。
-_SYSTEM_PROMPT = (
-    "你是一个温柔、耐心的情感陪伴伙伴，用简短、口语化的中文回应，每次不超过三句话。"
-    "如果用户消息以 [nudge] 开头，那说明它不是用户本人刚打的字，而是系统提示你主动关心一下他，"
-    "请自然地把话头接起来，绝不要提到 [nudge] 这几个字。"
-)
-
 
 class LLMUnavailableError(Exception):
     """对话生成失败。调用方按 chat-stream spec §2.3 转成 event: error + 5001。"""
+
+
+class PersonaLike(Protocol):
+    """人格三字段。
+
+    用 Protocol 而不是 import api 层的模型：core 反过来依赖 api 是层次倒挂，
+    而这里真的只需要这三个属性，duck typing 刚好。
+    """
+
+    name: str
+    personality_desc: str
+    speaking_style: str
+
+
+class HistoryTurnLike(Protocol):
+    """一条历史消息。"""
+
+    role: str
+    content: str
+
+
+def build_system_prompt(persona: PersonaLike) -> str:
+    """按 TECH_DESIGN §5.2 的模板拼 system prompt。
+
+    只实现当前拿得到的要求。§5.2 的框架里还有"当前人格状态 / 长期记忆 / 用户情绪"三段与
+    一条情绪应对要求 —— 它们分别依赖人格演化、记忆系统、情感分析，三者都还没做
+    （AnalyzeEmotion 与记忆提取仍是待做）。这里**不写占位符**：写了，后续接入时就看不出
+    哪段是真数据；不写，缺什么一目了然。
+
+    ⚠️ 第 2 条（[nudge]）不能省：主动消息注入的 "[nudge] ..." 在历史里与用户手打的字长得
+    一模一样，没有这句说明，模型会当成用户真的这么打字，回复里跟着出现 "[nudge]"
+    （TECH_DESIGN §5.4 流程 5）。
+    """
+    lines = [f"你是{persona.name}。"]
+    if persona.personality_desc:
+        lines.append(f"性格：{persona.personality_desc}")
+    if persona.speaking_style:
+        lines.append(f"说话风格：{persona.speaking_style}")
+
+    lines.append("")
+    lines.append("要求：")
+    lines.append("1. 以第一人称自然对话，不要暴露你在读记忆或设定，要像真人自然想起。")
+    lines.append(
+        "2. 若本条用户消息以 [nudge] 开头，说明这是系统在你主动找人聊天，不是用户刚发的，"
+        "请结合最近对话自然地问候或开启一个话题，不要提及 [nudge] 本身。"
+    )
+    return "\n".join(lines)
+
+
+def build_messages(
+    message: str,
+    persona: PersonaLike | None,
+    history: Sequence[HistoryTurnLike],
+) -> list[dict[str, str]]:
+    """把人格、历史、当前消息拼成 messages 数组 —— 这就是模型的**全部记忆**。
+
+    LLM 接口是无状态的，服务端不存会话：模型每一轮能看到什么，完全由这个数组决定。
+    少拼一段，模型就"不知道"那一段，而且不会报错，只会答得不对。
+
+    顺序不能变：system 必须最前（OpenAI 协议要求），历史按**时间正序**居中，
+    当前消息最后。persona 为 None 时干脆不发 system message，而不是发一条空的。
+    """
+    messages: list[dict[str, str]] = []
+    if persona is not None:
+        messages.append({"role": "system", "content": build_system_prompt(persona)})
+    for turn in history:
+        messages.append({"role": turn.role, "content": turn.content})
+    messages.append({"role": "user", "content": message})
+    return messages
 
 
 @lru_cache
@@ -45,7 +106,11 @@ def build_client() -> AsyncOpenAI:
     )
 
 
-async def stream_reply(message: str) -> AsyncIterator[str]:
+async def stream_reply(
+    message: str,
+    persona: PersonaLike | None = None,
+    history: Sequence[HistoryTurnLike] = (),
+) -> AsyncIterator[str]:
     """逐段产出回复文本，每段几个字。
 
     空段直接跳过：delta.content 在首包（只有 role）和末包（只有 finish_reason）都是 None，
@@ -57,10 +122,12 @@ async def stream_reply(message: str) -> AsyncIterator[str]:
     try:
         stream = await client.chat.completions.create(
             model=settings.deepseek_model,
-            messages=[
-                {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": message},
-            ],
+            # 上下文整个由 build_messages 组装后送上来。
+            #
+            # ⚠️ 这里**不能再硬编一段 system prompt**：它会把 persona 那一份盖掉，
+            # 于是用户在界面上填的说话风格完全不生效，而现象只是"说话不太像"，
+            # 没有任何报错 —— 2026-10-05 就是这么踩的（当时写死了"温柔陪伴、不超过三句"）。
+            messages=build_messages(message, persona, history),
             stream=True,
             max_tokens=settings.llm_max_tokens,
         )
