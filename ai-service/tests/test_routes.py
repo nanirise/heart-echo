@@ -27,12 +27,12 @@ VALID_BODY = {"user_id": 1, "persona_id": 1, "message": "你好"}
 FAKE_PIECES = ["辛苦", "了，今天发生", "什么了吗？"]
 
 
-async def fake_reply(message: str) -> AsyncIterator[str]:
+async def fake_reply(message: str, **_kwargs: object) -> AsyncIterator[str]:
     for piece in FAKE_PIECES:
         yield piece
 
 
-async def failing_reply(message: str) -> AsyncIterator[str]:
+async def failing_reply(message: str, **_kwargs: object) -> AsyncIterator[str]:
     """先吐一段再炸 —— 对应「DeepSeek 中途断了」。已发出的 delta 收不回来。"""
     yield FAKE_PIECES[0]
     raise LLMUnavailableError("connection reset")

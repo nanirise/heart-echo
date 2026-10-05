@@ -17,10 +17,39 @@ import (
 // ChatRequest 是 Go → Python 的请求体（chat-stream spec §2.2）。
 // 刻意保持 snake_case：它跟前端那个 {personaId, content} 长得不一样，
 // 两边混起来会立刻解析报错，而不是悄悄串味。
+//
+// Persona / History 是 2026-10-05 新增的**可选**字段（spec §2.2，纯加法）。
+// 两者都带 omitempty：为零值时字段整个不出现在 JSON 里，Python 侧拿到自己的默认值，
+// 于是「没传」和「传了个空的」在协议上长得一模一样，不必让 Python 去分辨。
 type ChatRequest struct {
 	UserID    uint64 `json:"user_id"`
 	PersonaID uint64 `json:"persona_id"`
 	Message   string `json:"message"`
+
+	// Persona 是这个人设的三行文字设定，Python 拿它拼 system prompt。
+	// 为 nil 时 Python 不发 system message —— 这是 Week 2 的旧行为，保留它是为了
+	// 让旧调用方（以及 spec §4 那条只发三个字段的验收 curl）继续能跑。
+	Persona *PersonaBrief `json:"persona,omitempty"`
+	// History 是最近若干轮对话，**必须按时间正序**（旧→新）。
+	// 顺序错了模型会以为"结果"发生在"原因"之前，而它不会报错，只会答得莫名其妙。
+	History []HistoryTurn `json:"history,omitempty"`
+}
+
+// PersonaBrief 是 Persona 里参与生成的那三列。
+//
+// 不复用 model.Persona：那个结构带着 ID / State / LastMessageAt 等一整行，
+// 全发过去等于把数据库表结构钉进跨服务的协议里，加一列就要两边一起改。
+type PersonaBrief struct {
+	Name            string `json:"name"`
+	PersonalityDesc string `json:"personality_desc"`
+	SpeakingStyle   string `json:"speaking_style"`
+}
+
+// HistoryTurn 是一条历史消息。Role 的取值与 chat_messages 表的 CHECK 约束一致，
+// 直接用 model.MessageRole 转过来，不在这里另立一套字符串。
+type HistoryTurn struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
 }
 
 // StreamEvent 是 ai-service 下发的一条事件，Type 只有三种，见下面的常量。

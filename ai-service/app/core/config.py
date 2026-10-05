@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-flash"
     llm_timeout_seconds: float = 60.0
-    llm_max_tokens: int = 512
+    llm_max_tokens: int = 4096
 
 
 @lru_cache

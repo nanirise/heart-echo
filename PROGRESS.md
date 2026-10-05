@@ -1,28 +1,41 @@
 # PROGRESS
 
-最后更新：2026-10-04
+最后更新：2026-10-05
 
 ## 成员1
-- 在做：**Week 2 生死线（流式对话）** —— PR 1（`ai-service/` 骨架 + 假流式）已于 2026-10-01 随 PR #51 合并；接下来是 **PR 2 接 DeepSeek 真流式**（`ai-service/core/llm_client.py`），详见下方「下一步」
+- 在做：**Week 2 生死线（流式对话）—— 代码与链路都已打通（2026-10-05）**。PR 2（接 DeepSeek 真流式）与 PR 3（Go 侧全链路）都已并入 `develop`（PR 3 = **PR #62**，合并点 `074bde5`）。四层联调的第 4、5 步已实测通过，详见下方「chat-stream 全链路实测」
+- ✅ **chat-stream 全链路实测（2026-10-05）** —— PR 3（`feature/chat-stream-chat-chain`，2 个 commit）**新增 4 个文件**：`backend/internal/service/ai_client.go`、`backend/internal/dto/chat_dto.go`、`backend/internal/repository/message_repo.go`、`backend/internal/handler/chat_handler.go`；**改 3 个**：`service/chat_service.go`（56 → 329 行，本功能的主体）、`handler/router.go`（+7 行：挂载路由 + 建 `AIClient`）、`repository/persona_repo.go`（+20 行，追加 `TouchLastMessageAt`，**成员 3 的文件，已打过招呼，原有代码一行未动**）
+  **注**：`chat_dto.go` / `message_repo.go` 按 [plan §2 步骤 0](docs/specs/chat-stream/plan.md) 属 `chat-message` spec，是硬前置，这次随本分支一并落下
+  **实测环境**：原生 PostgreSQL 16（**不是 Docker**，见下「卡住」）+ 临时集群跑在 5433 + Python 3.11.9 `.venv`；后端 8080 → ai-service 8000 → **假上游**（OpenAI 协议兼容，占位 API Key；脚本放 `%TEMP%`，**未入仓库**）
+  **实测结果**：
+  - `POST /api/v1/chat/stream` 出 7 段 `delta`，到达时刻 **0.00 / 0.25 / 0.50 / 0.75 / 1.00 / 1.25 / 1.50 秒** —— **分散到达 = 真流式**，这是本 spec 唯一的验收判据（§0）
+  - `end` 被 Go 吞掉，未透传给前端
+  - `done {"messageId":3}`，库里 `chat_messages.id=3` 确为 `role=assistant`，内容等于 7 段 delta 的拼接
+  - 响应头四项齐全（`text/event-stream` / `no-cache` / `keep-alive` / `X-Accel-Buffering: no`）
+  - 分隔符是 `\n\n`（`cat -A` 全程无 `^M`）
+  - 越权 `personaId` → `4043` + **HTTP 404** + `application/json`（**不是** 200 + 空流）；空 `content` / 非 JSON → `4001`
+  - `personas.last_message_at` 与最后一条消息的 `created_at` **SQL 比对返回 `true`**；`state` 仍是 `{"familiarity": 0}`（未被 `Save` 覆盖）；`emotion_label` / `emotion_score` 全 NULL
+  ⏳ **没验到的两条**：`5002`（Python 连不上）没单独造过；浏览器里的打字机**渲染**没开浏览器看——"流是逐条到的"已由到达时刻证明，但前端渲染那一层没动
+  ⏳ **跑通的前置**：`ai-service/.env` 原先**根本不存在**（`ai_service_token` 与 `deepseek_api_key` 都无默认值，缺了服务起不来）。2026-10-05 由我按 `.env.example` 建好，`AI_SERVICE_TOKEN` 与 `backend/.env` **逐字同步**（已比对相等）。**`DEEPSEEK_API_KEY` 仍是占位符 `sk-xxxxxxxx`，唯一挡着"真实生成"的东西**——填之前生成走 `event: error` + `5001`（链路本身是对的，就是答不出来）
 - ~~在做：Week 1 完成~~（2026-09-21 实测通过）。总纲 §7 给 Week 1 定的验收项「与成员 2 前后端联调成功」达成——PR B 合并后一直欠着的那一步补上了，五条都在浏览器里跑通：① 注册后直接进 `/chat` ② **F5 刷新仍保持登录态**（从 localStorage 的 `heart-echo-auth` 恢复，这是 Week 1 唯一的真验收项）③ 换隐身窗口走 `/login` 能进 ④ 密码错 → `4013`、重复用户名 → `4004` ⑤ 后端访问日志里能看到 `POST /api/v1/auth/register` 真的打进来
   联调环境（**本机，不入库**）：原生 **PostgreSQL 16**，不走 Docker。**库名、账号、密码三样都是 `heart`**；`backend/.env` / `frontend/.env` 由各自 `.env.example` 复制后改值——**注意本地 `DB_USER`/`DB_NAME` 是 `heart`，不是模板里的 `heart_echo`**。`.env` 不入库，各人本地自成一套，照抄模板去连库会连错
   踩到一个 PostgreSQL 15+ 的行为变化，记一笔：**普通角色在 `public` schema 建表会被拒（`SQLSTATE 42501`）**。Docker 的 postgres 镜像把 `POSTGRES_USER` 建成超级用户，所以撞不到；原生装法用的是普通角色，必须补一句 `ALTER SCHEMA public OWNER TO heart;`（在该库内执行）。**成员 3** 若也用原生 PG 跑 schema 核对，会卡在这一步
   **PR C 已合并（PR #50，2026-09-30）——Week 1 到此全部结束，auth-login 整条链路交付完毕**。分支 `feature/auth-profile` 的 tip `6ea7d3c` 已在 `origin/develop` 里（合并点为 `40fc87a`）。7 个 commit，13 文件 +1052/−62。改动：`dto`（3 个请求体 + `ProfileResponse` + `ParseAvatarURL` 三态）、`repository`（`UpdateProfile` / `UpdatePassword`）、`service`（`GetProfile` / `UpdateProfile` / `ChangePassword`）、`handler`（3 个 handler + `RegisterUserRoutes` + `bindStrictJSON` + 新文件 `auth_handler_test.go`）、`router.go` 挂 `protected` 组。文档清理已完成（spec §5 全勾、plan 步骤 2–7 与 PR 划分表更新、plan §3.6 新增「为什么要严格解码」）。
   **端到端冒烟已跑通（2026-09-30，原生 PostgreSQL 16 + 真后端）**：六个端点全打了一遍，约 30 条请求含 20 多条负例，后端日志 **0 个 ERROR / 0 个 500 / 0 个 panic**（WARN 全是故意的负例）。逐条核对通过：注册响应形状（3 个顶层字段 + user 4 字段、不含 `passwordHash`）；`4010` / `4011`×2 三条鉴权负例；`{"avatarUrl":null}` **真的把库里的 `avatar_url` 清成了 NULL**（这条最要紧——GORM 的 `Updates(struct)` 会跳过零值，只有 map 才清得掉）；`{}` 不改任何东西；`4004` / `4003` / `4015` / `4001` 各边界；改密后老密码 `4013`、新密码 `200`（证明真落库）；refresh 换回的令牌里 `uname` 是**改名后**的名字，不是注册时的旧名（`auth_service.go` 那句「回查一次库取当前值」确实生效）。库里对账：`password_hash` 是 `$2a$10$` 开头、长度 60
   **冒烟中改了 `PUT /user/profile` 的解码策略（队长 2026-09-30 拍板"严格模式"）**：新增 `handler.bindStrictJSON`，请求体出现 `username` / `avatarUrl` 以外的键返回 `4001`（原为静默忽略并 200）。用一个"不认识的字段名 + 只改用户名（合法）+ 太短（校验仍在跑）"五条的对照测试钉住，并做了**两步反向注入**验证（去掉 `DisallowUnknownFields` → 恰好前两条红；去掉 `ValidateStruct` → 恰好"太短"那条红），活体 7 条用例与测试一致。**已写进契约 §3.5 + §12，需要广播给成员 2**（他们的 `ProfileView` 尚未开始写，时机赶得上）
-- 下一步（**按优先级**，2026-10-04 重排）：
-  1. **PR 2：接 DeepSeek 真流式** —— 只碰 `ai-service/`，**不依赖任何人、也不依赖仓储层**，是眼下唯一能立刻推进的一步。新增 `app/core/llm_client.py`，把 `routes.py` 的 `_fake_stream()` 换成真流式（`_FAKE_REPLY` / `_DELTA_INTERVAL_SECONDS` 两个常量随之删掉）。spec §1.3 定下的三条不能破：`delta` 逐段转发、结尾发内部 `end`（**不发 `done`**）、`\n\n` 分隔符
-  2. **[队长手动] 广播契约 §12 两条新行**（严格解码、SSE 事件分隔符）。⚠️ 严格解码那条**时效窗口已经关上**——成员 2 的 profile 页已在 PR #54（`4e632e9`）合并，若他没踩到 `4001` 说明写法没问题；SSE 分隔符那条现在广播仍然来得及
-  3. **和成员 3 敲定 `chat-message` 四个文件的归属** —— `dto/chat_dto.go`、`repository/message_repo.go`、`service/chat_service.go`、`handler/chat_handler.go` **四个文件都不存在**（2026-09-30 实测确认）。`chat-message/spec.md` 的文件归属表写着归我，但 §6.3 #1 同时记为"待对齐"。**这是 PR 3 的前置，越早结越好**
-  4. **落 `chat-message` 的仓储层** —— PR 3 的硬前置（spec 原话：不先做，SSE 会顺手自己写一份 INSERT，两套写法必然对不上）。排在第 3 条之后
-  5. **PR 3：Go 侧** —— `ai_client.go` + `chat_service.go` + `chat_handler.go` + 挂载 + 四层分段联调。卡在第 3、4 条
-  6. **CI 决策** —— `ai-service/` 至今没有 CI job，见下
+- 下一步（**按优先级**，2026-10-05 重排）。上一版 6 条里 **1、3、4、5、6 已结**（见上「chat-stream 全链路实测」与「已结」），**只剩第 2 条（广播）仍欠**：
+  1. **填 `DEEPSEEK_API_KEY`（`ai-service/.env`）** —— 唯一挡着"真实生成"的一条。填完重跑一次 spec §4 A 的 `curl -N`：链路已用假上游验过，这一步要验的是**真 DeepSeek 的接入**（超时、限流、真实分片粒度），假上游验不到
+  2. **补 Go 侧自动化测试** —— plan §3.3 已记为「本功能目前最大的欠账」。2026-10-05 那次是**手工 curl** 做的，没留下可回归的东西。要点：SSE 事件流断言（只认 `delta` / `done` / `error` 三型、`end` 不透传、分隔符是 `\n\n`）+ `4043` 反向注入用例（越权必须走普通 JSON，**不是** 200 + 空流）。现有 `auth_handler_test.go` / `router_test.go` 的分工可参照
+  3. **浏览器打字机渲染验收**（plan 步骤 9 第 7 步）—— "流是逐条到的"已由到达时刻证明，**渲染**那一层还没开浏览器看过。这条做完，四层才算全通
+  4. **[队长手动] 广播契约 §12 两条新行**（严格解码、SSE 事件分隔符）—— 上一版的第 2 条，**唯一没结的一条**。严格解码那条时效窗口已关（成员 2 的 profile 页 PR #54 已合并，没踩到 `4001` 说明写法没问题）；**SSE 分隔符那条仍来得及**，但成员 2 的 chat 消费端已按现格式写死，改就是跨模块变更
+  5. **`docs/dev/demo-script.md:170` 的环境描述与实际不符** —— 那句写「Docker 29.8.1 + WSL 3.0.1 + PostgreSQL 16 容器 `heart_echo_db` 运行中」，本机 **Docker 与 WSL 都没装**（2026-10-05 查过：`docker` 不在 PATH，Program Files / AppData 都没有，`wsl.exe -l -v` 无发行版），实际是**原生 PostgreSQL 16**。**该文件归成员 2，未动**，待确认后改
+  6. **Week 3 内容可以开工了** —— 生死线已落地（总纲 §7 是「Week 2 生死线失守才砍」，没失守）。三个方向，spec 都已在 `docs/specs/`：**情感分析**（四个 🚫绝不砍 之一，目前**只有 `emotion_label` / `emotion_score` 两列和 DTO 字段，没有任何写入方**——`ai_client.go:42` 已注明 `AnalyzeEmotion` 还没做）；**记忆系统**（`user-memory`）；**朋友圈**（`ai-moment` / `moment-like` / `moment-comment`）
 - **已结（供追溯）**
   - ~~**写 SSE 的 spec**~~ —— **2026-09-30 已落、2026-10-01 随 PR #51 并入 develop**：`docs/specs/chat-stream/{spec.md,plan.md}`。四条决策当天拍板：功能名 `chat-stream`、内部路径加 `/internal` 前缀、内部请求体 snake_case、Python 出 SSE 由 Go 逐事件转发。骨架里定下的五条独有决策：① 归属校验必须在写 SSE 响应头之前（契约 §5 的 `4001/4010/4043` 是**进 SSE 之前**的普通 4xx，`5001/5002` 是 **200 + `event: error`**）；② `\n\n` 两侧都要；③ **`done` 由 Go 补发**（`messageId` 是 Go 落库后的主键，Python 不知道，所以 Python 发内部事件 `end`，Go 吞掉后补发）；④ 落库事务两次不合并；⑤ `Flush()` 与 `X-Accel-Buffering` 是两个缓冲层
 - **PR 1 已合并（PR #51，2026-10-01 合入 `develop`，合并点 `09a0e7b`）** —— `ai-service/` 骨架 + 假流式，12 个文件 / 274 行，四个 commit：`94243ae`（feat 代码）、`c1edb6b`（spec 决策冻结）、`2775299`（进度）、`4f76e6c`（spec + plan）。目录此前不存在，现已创建——`.env.example`、`requirements.txt` / `requirements-dev.txt`（版本用 `==` 钉死）、`pytest.ini`、`app/{__init__,main}.py`、`app/core/{__init__,config,security}.py`、`app/api/{__init__,routes}.py`、`tests/test_routes.py`。
   **实测通过**（本机 Python 3.11.9 + 独立 `.venv`）：`pytest` **6 passed**；`uvicorn` 起服务后 `curl -N` 实测 14 个 `event: delta` + 1 个 `event: end`，`cat -A` 确认行尾是 `$`（LF）**没有 `^M`**，即契约 §6 的 `\n\n` 在真实字节流上成立；响应头实测 `content-type: text/event-stream; charset=utf-8` + `cache-control: no-cache` + `x-accel-buffering: no` + `transfer-encoding: chunked`；`/health` 不带 token 返回 200（契约 §11 要求它能被 Go 探活）、流式接口不带 token 返回 401。
   ⚠️ **测试证明不了"字是一个个到的"** —— `TestClient` 会把整个响应体缓冲完，所以 pytest 只能钉格式与鉴权，"真流式"只能靠 `curl -N` 人工看（spec §4 A 第 4 步）。
-  ⏳ **仍未决**：`ai-service/` 是**新增顶层目录**，[AGENTS §9](../../AGENTS.md) 要求同一次提交里加 `ci.yml` job，而该节同时写着"提示我，不要自动修改"——**待队长决定**。2026-10-04 核对：`ci.yml` 仍只有 `frontend` / `backend` 两个 job（其间 PR #55 给 backend 加了 postgres service，**没有**碰 ai-service）
+  ✅ **已结（2026-10-05）**：`ai-service/` 是**新增顶层目录**，[AGENTS.md §9](AGENTS.md) 要求同一次提交里加 `ci.yml` job——**PR #59 加了第三个 job `ai-service`**（Python 3.11 + `pip install -r requirements-dev.txt` + `pytest`，用 monkeypatch 注入两个必填环境变量、把 DeepSeek 调用整个挡在门外，跑测试不碰网络）。原记录保留：2026-10-04 核对时它仍只有 `frontend` / `backend` 两个 job（其间 PR #55 给 backend 加了 postgres service，**没有**碰 ai-service）
   ✅ **合并前改掉一处**：`core/config.py` 的 `SettingsConfigDict` 去掉了 `extra="ignore"`，回到默认的 `forbid`（队长 2026-10-01 拍板）。理由：`.env` 里出现不认识的键应当在启动时报错指出是哪个键，与 `PUT /user/profile` 的严格解码决策一致；改完 `pytest` 仍 6 passed
   
   > **排期提示**：总纲 §7 写「Week 2 生死线（流式对话）若失守，立即砍掉记忆系统与主动消息」。以 2026-09-30 为基准，第 1 步（广播）当天可结，**第 2–4 步（SSE 全链路）是第一优先级**，Week 3/4 的内容（情绪分类、记忆 Agent、画像、ChromaDB）在生死线落地前**不要开工**。
@@ -33,8 +46,8 @@
 - ★ **遗留待补（2026-09-19 已知未做，下次改）**：
   1. ~~`docs/specs/auth-login/spec.md` 未收尾：§5.1 的 8 个验收勾、§6 变更记录加一行、§7 待确认第 2 条（广播）、头部状态行补「PR A 已合并」~~ —— **2026-09-30 已完成**：§5.1 / §5.2 / §5.3 全部勾上，§6 补两行变更记录，§7 第 3 条划掉、第 2 条（广播）保留为未决，头部状态行改为「PR A / B 已合入 develop，PR C 代码完成并通过端到端冒烟」。plan.md 同步（步骤 2–7 全 ✅、PR 表、§3.6 新增、§5 进度三行、文件清单加 `auth_handler_test.go`）
   2. `docs/API_CONTRACT.md` §12 的「已广播」列**仍全为 ⬜**、§13 三方冻结签署仍空白。**队长 2026-09-19 判定这两条「算通过」，文档尚未同步**——不改的话以后没人说得清
-  3. `deploy/.env.example` 缺失；`backend/.env.example` 里 `MOMENT_JOB_INTERVAL` / `PROACTIVE_JOB_INTERVAL` 只有一行占位注释、变量本身没有（MASTER §3 #4b，成员 3 的活）
-  4. `ai-service/` 目录**不存在**，`SCHEDULE_PARSE_BACKEND` 无从落地（MASTER §3 #4c）
+  3. ~~`deploy/.env.example` 缺失；`backend/.env.example` 里 `MOMENT_JOB_INTERVAL` / `PROACTIVE_JOB_INTERVAL` 只有一行占位注释、变量本身没有（MASTER §3 #4b，成员 3 的活）~~ —— **2026-10-05 复查已结**：`deploy/.env.example` 已在（PR #58 落 `deploy/` 时一并加上）；两个 interval 变量 `backend/.env.example:39,41` 与 `deploy/.env.example:24,26` 都在。**同一文件里留了一处过期注释**（`backend/.env.example:7` 写「由成员 3 补充」，而变量已在 39 / 41 行）——下次顺手改
+  4. ~~`ai-service/` 目录**不存在**，`SCHEDULE_PARSE_BACKEND` 无从落地（MASTER §3 #4c）~~ —— **2026-10-05 复查已结一半**：`ai-service/` 已由 PR #51 建起、PR #59 接上 DeepSeek；`SCHEDULE_PARSE_BACKEND=rule` 也写进了 `deploy/.env.example:29`。**剩下一半**：`ai-service/app/core/config.py` 里仍没有这个字段，代码侧还没读它——按 TECH_DESIGN §964 的说法，开关要等对应功能落地才真接上，即日程功能（`docs/specs/schedule/`，P1）
   5. **本文件下面的成员 2 / 成员 3 段落已过期**：成员 2 写「在做前端数据契约层」但那是早已合并的 PR #21；成员 3 整段空白，而他实际交付了 8 个 model PR + persona CRUD 后端。这份表现在不能当排期依据（他们的段落不归我改）
   6. ~~`router.go` 第 40 行「本轮 JWTAuth 仍是空壳」的失效注释~~ —— **本次 PR 已修**
   7. **新发现（本 PR 不修）**：`gin-contrib/cors` 收到**空的 origin 列表会直接 panic**（`all origins disabled`）。生产靠 `internal/config` 里 `CORS_ALLOW_ORIGINS` 的 `envDefault` 兜着，但谁在 `.env` 里显式写一行 `CORS_ALLOW_ORIGINS=`（空串），服务会在**启动时 panic**，而不是报一条配置错误
@@ -46,7 +59,8 @@
   **影响面**：`docs/dev/MEMBER_1_BACKEND_AI.md` §3 的两条验收命令、spec §4 A 的两条 curl，里面都有内联中文，**在这台机器上照抄一定 400**。已在 `docs/specs/chat-stream/spec.md` §4 加了警告。**成员 2 / 成员 3 在 Windows 上做 curl 验收时会踩同一条**——排查时别往服务端找
 - 卡住：**无**。此前「本机无 PostgreSQL」的阻塞已解，Week 1 端到端验证跑通。
   仍**未决**（不阻塞，但欠着）：`cmd/migrate` 读的是**裸 `os.Getenv("SCHEMA_CHECK_DSN")`**，不加载 `.env`、也不在 `.env.example` 里；而 `cmd/server` 走的是 `DB_*` 系列。两套连接参数各说各的。**「该不该统一」待队长拍板**（记录在 `docs/specs/persona-model/plan.md:161`）。眼下跑迁移时临时 `export` 一个绕开，**没改代码**
-  **Docker 推迟到 Week 2 流式对话做完再装**——Week 4 的部署/交付才真正需要它
+  **Docker 那条已过期（2026-10-05 实测更正）**：原记录「Docker 推迟到 Week 2 流式对话做完再装」——Week 2 已做完，而本机 **Docker 与 WSL 都没装**（`docker` 不在 PATH；Program Files / Program Files (x86) / AppData 都没有；`wsl.exe -l -v` 无发行版。先确认 shell 能看到项目目录之外，才下的这个结论）。**同时 `deploy/` 已经在了**（PR #58 落的 `Dockerfile` / `docker-compose.yml` / `docker-compose.dev.yml` / `nginx.conf`）。两条后果：① MASTER §9 要求「全员确认本地 `docker compose build` 通过」**在这台机器上做不到**；② `deploy/` 里的配置**本地无法验证**，要么 Week 4 装完 Docker，要么在别人的机器上过一遍。另：`docs/dev/demo-script.md:170` 写「Docker + WSL + PostgreSQL 16 容器运行中」，与实际不符（**成员 2 的文件，未动**）
+  **两处 `[假设]` 仍挂在代码里（2026-10-05 队长决定暂不补进 spec）**：`backend/internal/service/chat_service.go:135`（落 user 消息失败走普通 JSON `5003`——spec §1.1 只定了 `4001` / `4010` / `4043` 属"进 SSE 之前"，没给落库失败的位置）与 `chat_service.go:188`（浏览器中途断开：ctx 已作废、半截回复不入库，spec 未定义这条路径）。两处注释都写着「见下方 §待确认」，指的是 `docs/specs/chat-stream/spec.md` §5——**该节确实存在（spec.md:262），但这两条还没写进去**，注释目前是一个悬空引用
 - 改了哪些文件：
   - 已合入 `develop`：`backend/pkg/{errcode,response,logger,jwt}/`（PR #12）、`backend/internal/config/` + `backend/.env.example`（PR #20）、`backend/internal/middleware/{recovery,logger,cors,biz_error,jwt}.go` + `gin-contrib/cors` 依赖（PR #23）；`backend/internal/handler/{router.go,health_handler.go}`、`backend/cmd/server/main.go`（Step 8–10）
   - PR A 新增（PR #34）：`docs/specs/auth-login/{spec.md,plan.md}`、`backend/internal/middleware/jwt_test.go`
@@ -62,7 +76,11 @@
   - auth PR C 修改：`backend/internal/dto/auth_dto.go` + `auth_dto_test.go`（3 个请求体 + `ProfileResponse` + `ParseAvatarURL` 三态）、`backend/internal/repository/user_repo.go`（`UpdateProfile` / `UpdatePassword`）、`backend/internal/service/auth_service.go` + `auth_service_test.go`、`backend/internal/handler/auth_handler.go`（后 3 个 handler + `RegisterUserRoutes` + `bindStrictJSON`）、`backend/internal/handler/router.go`（后 3 条挂 `protected` 组）、`backend/internal/handler/router_test.go`（`TestUserRoutesRejectAnonymousRequests` + 令牌类型负例扩到 user 路由）、`docs/API_CONTRACT.md` §3.5/§6/§12、`docs/specs/auth-login/{spec.md,plan.md}`
   - chat-stream PR 1 新增（PR #51，`feature/chat-stream-ai-service`）：`ai-service/` 全部 12 个文件（清单见上「PR 1 已合并」）
   - chat-stream PR 1 修改（PR #51）：`docs/specs/chat-stream/{spec.md,plan.md}`（§2.2 / §2.3 / §4 / §5 四处待补细则补全、待确认项标定、新增 Windows curl 中文警告）、`PROGRESS.md`
-    > 注：`plan.md` 的 PR 状态表与步骤表在合并时**没有勾**（当时直接推了代码），本次一并补上
+  - chat-stream PR 2 新增（**PR #59**，`feature/chat-stream-llm`）：`ai-service/app/core/llm_client.py`（接 DeepSeek 真流式）
+  - chat-stream PR 2 修改（PR #59）：`ai-service/{.env.example,requirements.txt}`、`ai-service/app/api/routes.py`（`_fake_stream()` → 真流式，两个假常量随之删掉）、`ai-service/app/core/config.py`（+ DeepSeek 两项配置）、`ai-service/tests/test_routes.py`、`backend/internal/handler/{router.go,router_test.go}`、`.github/workflows/ci.yml`（**新增第三个 job `ai-service`**）、`docs/TECH_DESIGN.md`、`docs/specs/chat-stream/plan.md`、`PROGRESS.md`
+  - chat-stream PR 3 新增（**PR #62**，`feature/chat-stream-chat-chain`）：`backend/internal/service/ai_client.go`（188 行）、`backend/internal/dto/chat_dto.go`、`backend/internal/repository/message_repo.go`、`backend/internal/handler/chat_handler.go`
+  - chat-stream PR 3 修改（PR #62）：`backend/internal/service/chat_service.go`（56 → 329 行，本功能主体：`StreamChat` / `runStream` / `emitChatEvent` / `persistMessage` / `InjectNudge`）、`backend/internal/handler/router.go`（挂 `protected` 组 + 建 `AIClient`）、`backend/internal/repository/persona_repo.go`（追加 `TouchLastMessageAt`，**成员 3 的文件，已确认**，原有代码一行未动）
+    > 注：`plan.md` 的 PR 状态表与步骤表在 PR #59 / #62 合并时**也没有勾**（同 PR 1 的情况），2026-10-05 一并补齐（PR 表、步骤表、§3.3 改写成「已定 / 待补」、§5 进度补两行）
 
 ## 成员2
 - 在做：分支 2「前端数据契约层」编码完成、等 PR —— `src/types/api.ts`、`src/types/errcode.ts`、`frontend/.env.example`，spec 与 plan 已提交（`docs/specs/frontend-api-types/`）

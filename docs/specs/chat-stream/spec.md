@@ -144,18 +144,41 @@ Go → Python 的请求体是 **snake_case**（`user_id` / `persona_id` / `messa
 ```json
 {
   "user_id": 1,
-  "persona_id": 1,
-  "message": "今天上班好累啊"
+  "persona_id": 23,
+  "message": "今天上班好累啊",
+  "persona": {
+    "name": "小暖",
+    "personality_desc": "你是小暖，温柔，耐心，喜欢倾听",
+    "speaking_style": "口语化，短句"
+  },
+  "history": [
+    {"role": "user",      "content": "我今天上班好累"},
+    {"role": "assistant", "content": "辛苦啦，先歇会儿吧"}
+  ]
 }
 ```
+
+| 字段 | 必填 | 说明 |
+|---|:--:|---|
+| `user_id` / `persona_id` | ✅ | **只用于归属校验与日志，不参与生成**（`user_id` 只能来自 Go 侧 Token，见 AGENTS §4.3） |
+| `message` | ✅ | 用户这一轮说的话 |
+| `persona` | ⬜ | 人格三字段，Python 用它拼 system prompt。**不传 = 不发 system message** |
+| `history` | ⬜ | 最近 N 条消息，**时间正序**（旧→新）。**不传 = 无历史** |
 
 **请求头**：`X-Internal-Token: <AI_SERVICE_TOKEN>`（两侧值必须一致，不一致恒 401 —— AGENTS §4.3）
 
 **响应**：`text/event-stream`，事件同 §1.3 —— `delta` × N → `end`。
 
-> **Week 2 只传这三个字段**（2026-09-30 定）。人格描述与历史消息**本阶段不传**，Python 侧 prompt 先是一段硬编字符串。
-> 为什么：生死线只验「能不能流」这一件事，而 [TECH_DESIGN §5.2](../../TECH_DESIGN.md) 的 prompt 结构还没实际调过，
-> 现在把 `persona` / `history` 的字段格式定死等于在没验证过的地方下注。Week 3 补这两个字段是**纯加法**，不改现有字段。
+> **Week 3 补上 `persona` / `history`**（2026-10-05 定）。两者都是**纯加法且可选**：不传时 Python 行为与 Week 2
+> 完全一致，所以 §4 第 4 步那条只发三个字段的验收 `curl` 不必改，至今有效。
+>
+> **为什么必须补**：LLM 的 `/chat/completions` **无状态** —— 服务端不存任何会话，上下文完全由请求体里的
+> `messages` 数组决定。Week 2 只发 `message` 时，模型眼里的历史**永远只有当前这一句**，于是人格不生效、
+> 且每轮都"失忆"。这不是模型的问题，是**该带的东西没带**：
+> - `persona` 由 Go 从 `personaRepo.FindOwned` 取（同一行顺带完成归属闸门，不多查一次）
+> - `history` 由 Go 取最近 20 条，**必须在落 user 消息之前取** —— 落库之后再取，当前这句会同时出现在
+>   `history` 和 `message` 里，模型会看到自己的问题被问了两遍
+> - 两者都在 **Go 侧**取材：ai-service 不连数据库，Go 是唯一能拿到人格与历史的地方
 
 **健康检查**：`GET /health` **不带** `X-Internal-Token` —— 它由 Go 侧探活调用（[契约 §11](../../API_CONTRACT.md) 明写"不带 `X-Internal-Token`"）。给它加鉴权会让 Go 的健康检查恒失败。
 
@@ -263,9 +286,9 @@ Go → Python 的请求体是 **snake_case**（`user_id` / `persona_id` / `messa
 
 | # | 问题 | 状态 |
 |---|---|---|
-| 1 | `ChatRequest` 的完整字段（要不要带人格描述 / 历史消息） | ✅ **已定：Week 2 只传 `user_id` / `persona_id` / `message`**（§2.2）。人格与历史 Week 3 补 |
+| 1 | `ChatRequest` 的完整字段（要不要带人格描述 / 历史消息） | ✅ **已定：带**（2026-10-05 更新）。新增**可选** `persona` / `history`，形状见 §2.2。不传时行为与 Week 2 一致 |
 | 2 | `error` 后前端重试 → 库里多一条重复 user 消息 | ✅ **已定：本阶段不处理，记为已知取舍**（§2.3） |
-| 3 | Python 的历史消息从哪来 | ⏸ **顺延到 Week 3**。方向已定：**必须由 Go 传**（Python 不碰 DB 是既定架构），Week 3 定字段形状 |
+| 3 | Python 的历史消息从哪来 | ✅ **已定：由 Go 传**（2026-10-05 落地）。Go 取最近 20 条、转成时间正序随请求体发出（§2.2）；Python 仍不碰 DB |
 | 4 | 内部接口的 `/internal` 前缀 | ✅ **已定：加**（§1.7）。⏳ 尚欠：同步改 [成员 1 任务书 §6](../../dev/MEMBER_1_BACKEND_AI.md)，并广播给成员 3（他的 `ai-moment` spec 已是这个写法） |
 | 5 | `ai-service/` 是新增顶层目录，[AGENTS §9](../../../AGENTS.md) 要求同一次提交里更新 `ci.yml` | ⏳ **待队长决定**。当前 `ci.yml` 只有 `frontend` / `backend` 两个 job；AGENTS §9 同时要求"发现不一致时提示我，不要自动修改"，故未动 |
 
@@ -276,3 +299,4 @@ Go → Python 的请求体是 **snake_case**（`user_id` / `persona_id` / `messa
 | 日期 | 版本 | 变更 | 原因 |
 |---|---|---|---|
 | 2026-09-30 | v0.1 | 创建（骨架） | Week 2 生死线开工前的设计与验收基线；定下五条独有决策：归属校验先于响应头、`\n\n`、Go 补发 `done`、两次事务、`/internal` + snake_case |
+| 2026-10-05 | v0.2 | §2.2 请求体新增**可选**字段 `persona`（人格三字段）与 `history`（最近 20 条，时间正序）；§5 待确认 #1 / #3 结案 | 实测发现**人格不生效**且**每轮失忆**。根因是 LLM 接口无状态、上下文必须由调用方每次带入，而 Week 2 只发了当前这一句。纯加法，不改现有字段 |
