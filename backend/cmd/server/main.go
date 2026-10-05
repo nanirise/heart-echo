@@ -36,6 +36,8 @@ func main() {
 
 	appLogger := logger.New()
 	defer func() { _ = appLogger.Sync() }()
+	// 判定链路的日志走 zap.L()，不在这里设成全局就是 no-op，debug 全丢。
+	zap.ReplaceGlobals(appLogger)
 
 	db, err := connectDatabase(cfg)
 	if err != nil {
@@ -45,7 +47,11 @@ func main() {
 	// 主动消息定时扫描（AGENTS §4.8：定时任务一律在 Go 侧）；
 	// 与手动端点共用同一个 TriggerNow（spec §4）。
 	jobCtx, cancelJob := context.WithCancel(context.Background())
-	proactiveSvc := service.NewProactiveService(db)
+	// [假设] 这里与 router.go 各建一个 ChatService / AIClient 实例：两条链路共享 db、
+	// 不共享状态，各自演化不影响。代价是两套到 ai-service 的连接池（AIClient 用默认
+	// http.Client，无连接数上限，可接受）。若将来 Week 3 的 emotion / memory 要复用
+	// 同一个实例，再把 AIClient 提到这里建一次、由 NewRouter 传参。
+	proactiveSvc := service.NewProactiveService(db, service.NewChatService(db, service.NewAIClient(cfg.AI)))
 	proactiveJob := service.NewProactiveJob(proactiveSvc, cfg.ProactiveJobInterval, appLogger)
 	go proactiveJob.Run(jobCtx)
 
