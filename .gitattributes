@@ -1,0 +1,9 @@
+# 本仓库 core.autocrlf=true，checkout 时 git 会把文本文件的 LF 换成 CRLF。
+# 对 .py 无所谓（Python 容忍 CRLF），但对 shell 脚本是致命的：
+# Git Bash 读到 CRLF 会报 "$'\r': command not found"，脚本根本跑不起来。
+# 所以对 .sh 显式关掉转换：仓库里和工作区里都保持 LF。
+*.sh text eol=lf
+
+# .cmd 反过来，必须是 CRLF：cmd.exe 解析批处理文件时对 LF 行尾不可靠，
+# 多行括号块和 goto 会出问题 —— 本机侥幸能跑，队友的机器不保证。
+*.cmd text eol=crlf
