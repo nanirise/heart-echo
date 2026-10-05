@@ -33,7 +33,8 @@ func newProactiveTestRouter(t *testing.T, db *gorm.DB) *gin.Engine {
 	r.Use(middleware.BizErrorHandler(zap.NewNop()))
 	protected := r.Group("/api/v1")
 	protected.Use(middleware.JWTAuth(testSecret))
-	RegisterProactiveRoutes(protected, NewProactiveHandler(service.NewProactiveService(db)))
+	// chat 传 nil：本文件的用例只打到 settings 两端的绑定层，不触碰 TriggerNow
+	RegisterProactiveRoutes(protected, NewProactiveHandler(service.NewProactiveService(db, nil)))
 	return r
 }
 
