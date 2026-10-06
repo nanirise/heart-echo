@@ -205,7 +205,8 @@ export const useChatStore = defineStore('chat', {
       try {
         await this.loadPersonas()
 
-        if (this.currentPersonaId !== null) {
+        // await 期间用户可能已经发出消息：此时再替换 messages 会洗掉流式占位
+        if (this.currentPersonaId !== null && !this.isStreaming) {
           await this.loadMessages(this.currentPersonaId)
         }
       } finally {
