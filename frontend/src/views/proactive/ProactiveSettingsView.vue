@@ -40,13 +40,13 @@ function isIntInRange(value: unknown, min: number, max: number): value is number
   return typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max
 }
 
-/** 规则对齐契约 §9 的约束：间隔 5-1440 且 min < max，日上限 1-10。前端只做提前拦截，后端仍是权威 */
+/** 规则对齐契约 §9 的约束：间隔 1-1440 且 min < max，日上限 1-10。前端只做提前拦截，后端仍是权威 */
 const rules: FormRules<typeof form> = {
   intervalMin: [
     {
       validator: (_rule, value, callback) => {
-        if (!isIntInRange(value, 5, 1440)) {
-          callback(new Error('请输入 5-1440 之间的整数分钟数'))
+        if (!isIntInRange(value, 1, 1440)) {
+          callback(new Error('请输入 1-1440 之间的整数分钟数'))
           return
         }
 
@@ -63,8 +63,8 @@ const rules: FormRules<typeof form> = {
   intervalMax: [
     {
       validator: (_rule, value, callback) => {
-        if (!isIntInRange(value, 5, 1440)) {
-          callback(new Error('请输入 5-1440 之间的整数分钟数'))
+        if (!isIntInRange(value, 1, 1440)) {
+          callback(new Error('请输入 1-1440 之间的整数分钟数'))
           return
         }
 
@@ -268,7 +268,7 @@ onMounted(() => {
             <el-input-number
               v-model="form.intervalMin"
               class="number-input"
-              :min="5"
+              :min="1"
               :max="1440"
               :step="5"
             />
@@ -278,7 +278,7 @@ onMounted(() => {
             <el-input-number
               v-model="form.intervalMax"
               class="number-input"
-              :min="5"
+              :min="1"
               :max="1440"
               :step="5"
             />
