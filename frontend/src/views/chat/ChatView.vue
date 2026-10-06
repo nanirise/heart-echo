@@ -78,11 +78,29 @@ onMounted(async () => {
   }
 })
 
-// ③ 离开页面就断流（spec §2 硬性约束第 6 条）。
+// ③ 离开页面就断流（spec §2 硬性约束第 6 条），兼做 ④ 的解绑
 // 切人设的场景已被 ① 覆盖，这里补的是「整页切走」（点侧栏去人设 / 画像）——
 // 那种情况组件会被卸载，这是必经之路
 onBeforeUnmount(() => {
   chatStore.stopStreaming()
+  document.removeEventListener('visibilitychange', handleForeground)
+  window.removeEventListener('focus', handleForeground)
+})
+
+// ④ 回前台刷新（spec §5.3）：
+// 主动消息由后端定时落库，停在对话页不动看不到；只做「离开又回来」，不做常驻订阅
+function handleForeground(): void {
+  // visibilitychange 切到后台时也会触发，那一次不需要刷新
+  if (document.visibilityState !== 'visible') {
+    return
+  }
+
+  void chatStore.refreshActiveConversation()
+}
+
+onMounted(() => {
+  document.addEventListener('visibilitychange', handleForeground)
+  window.addEventListener('focus', handleForeground)
 })
 
 /**
