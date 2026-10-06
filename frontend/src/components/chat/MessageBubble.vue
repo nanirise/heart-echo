@@ -7,6 +7,7 @@ const props = defineProps<{
   message: ChatMessage
 }>()
 
+// isMine 只看 role；nudge 过滤在 store.loadMessages 层（.filter(isNudge === false)），不在本组件做第二次
 const isMine = computed(() => props.message.role === 'user')
 
 /**

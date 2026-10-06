@@ -43,7 +43,7 @@ Week 1 交付了「人的入口」（登录/注册页），但**进来之后没�
 | `frontend/src/api/mock/persona.ts` | 新增 · `listPersonas` 的 Mock（与成员 3 的真实实现**同签名**，含分页壳）；侧栏人设列表的来源 |
 | `frontend/src/stores/chat.ts` | 新增 · 消息列表、发送、打字机拼接、未读红点 |
 | `frontend/src/views/chat/ChatView.vue` | 新增 · 对话页（人设侧栏 + 消息区 + 输入框） |
-| `frontend/src/components/chat/MessageBubble.vue` | 新增 · 消息气泡（区分 user / assistant / nudge） |
+| `frontend/src/components/chat/MessageBubble.vue` | 新增 · 消息气泡（按 role 区分 user / assistant；nudge 注入行在 store 层已被过滤，不到组件） |
 | `frontend/src/components/chat/ChatInput.vue` | 新增 · 输入框 + 发送（含 Enter 发送 / Shift+Enter 换行） |
 | `frontend/src/components/chat/TypingIndicator.vue` | 新增 · 首个 `delta` 到达前的等待态 |
 | `frontend/src/types/chat.ts` | 新增 · `ChatMessage` / `StreamChatPayload` 等本模块类型 |
