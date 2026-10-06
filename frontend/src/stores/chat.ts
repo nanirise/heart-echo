@@ -200,8 +200,6 @@ export const useChatStore = defineStore('chat', {
         return
       }
 
-      console.log('[refresh] 重拉一次')
-
       refreshing = true
 
       try {
