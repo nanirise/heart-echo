@@ -116,11 +116,11 @@ docker compose -f deploy/docker-compose.yml build nginx
 |------|----------|------|
 | 配置表与 CRUD | `proactive_settings` 的 repo/service/handler | `GET/PUT /proactive/settings`（`personaId` + 可改字段） |
 | 定时扫描 | `service/proactive_job.go` | 每 5 分钟扫描一次，按 `personas.last_message_at` 判空闲 |
-| 触发逻辑 | `ProactiveService.TriggerNow(personaID)` | 检查沉默时长、日限额、最近回复 |
+| 触发逻辑 | `ProactiveService.TriggerNow(personaID)` | 检查沉默时长、日限额 |
 | 手动触发接口 | `POST /proactive/trigger` 🚨 | **与定时任务复用同一段逻辑** |
 | 配置页 UI | 设置页 / 人设页内的表单 | **三个控件都要给**：开关、间隔区间（min/max）、每日上限 |
 | 侧栏红点 | 前端 store + 对话侧栏 | 有未读主动消息时对应人设旁显示红点，打开后清除 |
-| 防骚扰 | service 层 | 每日上限（可配）、可关闭、1 小时内回复过不触发 |
+| 防骚扰 | service 层 | 每日上限（可配）、可关闭 |
 
 **实现要点**
 

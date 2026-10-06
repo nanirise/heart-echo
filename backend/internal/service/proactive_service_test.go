@@ -5,7 +5,7 @@
 // 连不上（CI 无 Postgres 服务、本机容器没起）即 Skip：如实跳过，不假装覆盖。
 //
 // 构造 ProactiveService 时 chat 一律传 nil：本文件只覆盖 settings 读写，不触碰 TriggerNow。
-// 触发链路（五层判定）的用例需要一个假的 AIClient，尚未落盘。
+// 触发链路（四层判定）的用例需要一个假的 AIClient，尚未落盘。
 package service
 
 import (
