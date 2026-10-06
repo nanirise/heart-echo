@@ -169,7 +169,7 @@ func (s *ProactiveService) TriggerNow(ctx context.Context, userID, personaID uin
 	}
 
 	// ③ 当日已注入条数 < dailyLimit。口径是 chat_messages 里 is_nudge=true 的条数，
-	// 与 P1 日程提醒共用同一个上限（spec §3.d）——两套链路各数各的会变成两个防骚扰口径。
+	// 与 P1 日程提醒共用同一个上限（spec §3.c）——两套链路各数各的会变成两个防骚扰口径。
 	sent, err := s.repo.CountTodayNudges(ctx, userID, personaID)
 	if err != nil {
 		return nil, errcode.Wrap(errcode.ErrDBFailed, err)
@@ -179,17 +179,7 @@ func (s *ProactiveService) TriggerNow(ctx context.Context, userID, personaID uin
 		return nil, nil
 	}
 
-	// ④ 最近 1 小时没有用户消息。排除注入行是这条的全部要害（spec §3.c）。
-	recent, err := s.repo.HasRecentUserMessage(ctx, userID, personaID)
-	if err != nil {
-		return nil, errcode.Wrap(errcode.ErrDBFailed, err)
-	}
-	if recent {
-		logTriggerSkip(personaID, "recent_user_message")
-		return nil, nil
-	}
-
-	// ⑤ 全过：注入 [nudge] → 走聊天链路生成 → 落库，同步拿回生成的回复。
+	// ④ 全过：注入 [nudge] → 走聊天链路生成 → 落库，同步拿回生成的回复。
 	// 生成失败原样上抛（5001 / 5002），绝不降级成"未触发"——否则演示时表现为
 	// "点了没反应"，而日志里一条错都没有（spec §3.a）。
 	res, err := s.chat.InjectNudge(ctx, NudgeInput{

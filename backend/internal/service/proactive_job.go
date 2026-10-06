@@ -40,7 +40,7 @@ func (j *ProactiveJob) Run(ctx context.Context) {
 }
 
 // scanOnce 扫一轮：拿 enabled 人设 → 逐行调 TriggerNow。
-// TriggerNow 内部负责五层判定与 debug 日志（spec §3），本层只负责调度。
+// TriggerNow 内部负责四层判定与 debug 日志（spec §3），本层只负责调度。
 func (j *ProactiveJob) scanOnce(ctx context.Context) {
 	rows, err := j.svc.repo.ListEnabledForScan(ctx)
 	if err != nil {

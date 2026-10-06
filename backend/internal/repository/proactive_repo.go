@@ -82,7 +82,7 @@ func todayMidnight() time.Time {
 	return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, cstZone)
 }
 
-// CountTodayNudges 数该人设今天已注入的 [nudge] 条数，供日上限判定（spec §3.d）。
+// CountTodayNudges 数该人设今天已注入的 [nudge] 条数，供日上限判定（spec §3.c）。
 // 查 chat_messages——is_nudge 列在该表，不在 proactive_settings；只数注入行、不数 assistant 回复。
 // ⚠️ 与 P1 日程提醒共用：两链路共用同一个日上限，计数口径不能各算各的。
 // 日界时区为硬编码 +08:00 常量（不读 config）；当前时刻取自进程时钟并显式换算到该时区，不依赖进程 TZ。
@@ -111,22 +111,6 @@ func (r *ProactiveRepo) IsIdleOverThreshold(
 		Where("id = ? AND user_id = ? AND last_message_at IS NOT NULL"+
 			" AND EXTRACT(EPOCH FROM (NOW() - last_message_at)) >= ?",
 			personaID, userID, thresholdSeconds).
-		Count(&n).Error
-	return n > 0, err
-}
-
-// HasRecentUserMessage 回答触发判定 ④：该人设最近 1 小时内有没有真人发的消息。
-//
-// is_nudge = false 一个条件都不能少：注入的 [nudge] 也是 role='user'，
-// 不排除的话上一次主动消息会把自己的注入当成「用户刚回复过」，把下一次判定卡死（spec §3.c）。
-// role 过滤同样要带：assistant 回复的 is_nudge 也是 false，只按它排会把 AI 自己说的话算成用户消息。
-// 1 小时窗口是 spec §3 ④ 定的固定口径，没有对应配置列；比较用数据库的 NOW()，理由同上。
-func (r *ProactiveRepo) HasRecentUserMessage(ctx context.Context, userID, personaID uint64) (bool, error) {
-	var n int64
-	err := r.db.WithContext(ctx).Model(&model.ChatMessage{}).
-		Where("persona_id = ? AND user_id = ? AND role = ? AND is_nudge = ?"+
-			" AND created_at >= NOW() - INTERVAL '1 hour'",
-			personaID, userID, model.RoleUser, false).
 		Count(&n).Error
 	return n > 0, err
 }
