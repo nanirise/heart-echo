@@ -9,9 +9,9 @@
 export interface SettingsResponse {
   personaId: number
   enabled: boolean
-  /** 空闲判定随机阈值的下界；契约约束 5-1440 且 < intervalMax */
+  /** 空闲判定随机阈值的下界；契约约束 1-1440 且 < intervalMax */
   intervalMin: number
-  /** 空闲判定随机阈值的上界；契约约束 5-1440 且 > intervalMin */
+  /** 空闲判定随机阈值的上界；契约约束 1-1440 且 > intervalMin */
   intervalMax: number
   /** 每日主动消息上限；契约约束 1-10，与日程提醒共用这一份计数 */
   dailyLimit: number

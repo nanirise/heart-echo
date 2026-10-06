@@ -193,9 +193,9 @@ func TestProactiveUpdateSettingsValidation(t *testing.T) {
 		{"intervalMin 缺失", func(r *dto.UpdateSettingsRequest) { r.IntervalMin = nil }},
 		{"intervalMax 缺失", func(r *dto.UpdateSettingsRequest) { r.IntervalMax = nil }},
 		{"dailyLimit 缺失", func(r *dto.UpdateSettingsRequest) { r.DailyLimit = nil }},
-		{"intervalMin 小于 5", func(r *dto.UpdateSettingsRequest) { v := 4; r.IntervalMin = &v }},
+		{"intervalMin 小于 1", func(r *dto.UpdateSettingsRequest) { v := 0; r.IntervalMin = &v }},
 		{"intervalMin 大于 1440", func(r *dto.UpdateSettingsRequest) { v := 1441; r.IntervalMin = &v }},
-		{"intervalMax 小于 5", func(r *dto.UpdateSettingsRequest) { v := 4; r.IntervalMax = &v }},
+		{"intervalMax 小于 1", func(r *dto.UpdateSettingsRequest) { v := 0; r.IntervalMax = &v }},
 		{"intervalMax 大于 1440", func(r *dto.UpdateSettingsRequest) { v := 1441; r.IntervalMax = &v }},
 		{"intervalMin 等于 intervalMax", func(r *dto.UpdateSettingsRequest) {
 			a, b := 60, 60
@@ -218,9 +218,9 @@ func TestProactiveUpdateSettingsValidation(t *testing.T) {
 
 	// 反例的另一半：边界值必须放行。校验过严（比如把 1440 判成越界）只会在这一条上变红。
 	// 测试库连不上，所以"放行"的证据就是停在 5003 上。
-	t.Run("边界值 5/1440/10 全合法 → 越过校验停在库上", func(t *testing.T) {
+	t.Run("边界值 1/1440/10 全合法 → 越过校验停在库上", func(t *testing.T) {
 		e := false
-		min, max, limit := 5, 1440, 10
+		min, max, limit := 1, 1440, 10
 		_, err := svc.UpdateSettings(ctx, 7, &dto.UpdateSettingsRequest{
 			PersonaID: 1, Enabled: &e, IntervalMin: &min, IntervalMax: &max, DailyLimit: &limit,
 		})

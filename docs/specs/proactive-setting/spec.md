@@ -149,7 +149,7 @@ GORM 源码链条、实测读数、反例分析**全部进 `.learn/proactive-set
 **四条要求：**
 
 1. **DTO 用指针**（`*bool` / `*int`），否则 `{"enabled":false}` 与 `{"dailyLimit":0}` 会被 `binding:"required"` 判成"没传"→ `4001`，**开关永远关不掉**（§1.1 第一层；实测见 `.learn` §4 的 F1/F2 对照）。
-2. **校验规则照契约 §9 的表**（`5 ≤ interval ≤ 1440`、`intervalMin < intervalMax`、`1 ≤ dailyLimit ≤ 10`），**越界一律 `4001`**，在 service 层做，**不写进 DTO 的 tag**（跨字段规则写不进 `binding`）。
+2. **校验规则照契约 §9 的表**（`1 ≤ interval ≤ 1440`、`intervalMin < intervalMax`、`1 ≤ dailyLimit ≤ 10`），**越界一律 `4001`**，在 service 层做，**不写进 DTO 的 tag**（跨字段规则写不进 `binding`）。
 3. **写入必须走 `UpdateOwned`**（内部是 `map[string]any`）。**禁止** `Model(...).Updates(model.ProactiveSetting{...})`、**禁止** `Save`（`Save` 写回全部列，会把 `last_nudge_at` 一起覆盖成零值）。
 4. **`PUT` 包事务**：`UPDATE` + 回读 `SELECT` 要么都看到，要么都不写。**`RowsAffected == 0` → 直接 `4043`**（§1.2），不要再补一次存在性查询。
 

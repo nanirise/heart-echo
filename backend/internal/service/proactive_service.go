@@ -15,7 +15,7 @@ import (
 
 // 契约 §9 的取值边界（proactive-setting §2.2 指定在 service 层校验，不写进 DTO 的 tag）。
 const (
-	settingsIntervalMin = 5
+	settingsIntervalMin = 1
 	settingsIntervalMax = 1440
 	settingsDailyMin    = 1
 	settingsDailyMax    = 10
