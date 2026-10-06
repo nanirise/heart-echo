@@ -26,6 +26,7 @@
 | 8 | 路由表换 `component`（1 行） | 改 `router/index.ts` | ⏳ |
 | 9 | 自查：`typecheck` / `build` / 浏览器逐条过 spec §5.1 | 证据 | ⏳ |
 | 10 | 提交：文档一笔、代码一笔 | 2 笔 | ⏳ |
+| 11 | **v4 增量**：回前台刷新（store 新 action + `visibilitychange` / `focus` 监听） | 改 2 个源文件 | ⏳ |
 
 **顺序理由**：类型 → 请求 → Mock → store → 组件 → 视图 → 路由，自下而上。最关键是**第 8 步必须最后做**：路由表引用的文件不存在时 `vue-tsc` 报 TS2307、构建直接失败（3-B 与 frontend-auth-pages 都踩过同一个坑）。
 
@@ -233,6 +234,44 @@ Mock 数据本身要覆盖几种边界：**3 个人设**（侧栏切换）、**�
 
 **补偿措施**：把规模换来的风险用**更细的自查清单**抵掉——spec §5.1 列了 15 条可本机验证的项，其中「人为注入 error」「把 delta 从中间切开」两条是本支专属的**破坏性验证**，专门用来覆盖最容易偷工减料的地方。
 
+### 3.11 回前台为什么不能直接「重拉一次」
+
+**问题**：主动消息由后端触发并落库，前端不知道。停在对话页不动看不到；**切走再回来也看不到**——`selectPersona` 的早退分支（PR #68）只在**路由参数变化**时执行，而「切标签页」「切窗口」不改路由。
+
+**做法**：`ChatView` 监听 `document` 的 `visibilitychange` 与 `window` 的 `focus`，回前台时交给 store 的一个新 action（`refreshActiveConversation()`）去 `loadPersonas()` + `loadMessages(currentPersonaId)`。
+
+**为什么收口到 store，而不是直接写在组件里**：判据是 `isStreaming`——它是 **store 的 state**。组件读它做业务决策，等于把「什么时候不能刷」这条规则散到视图层；收口到 action 之后，将来任何新的刷新入口（轮询、手动刷新按钮）复用同一个判据，不会各自漏一次。这也是 PR #69 定下的「store 是唯一收口」。
+
+**⚠️ 必须加的三道守卫：**
+
+1. **`isStreaming` 时整体跳过。** `loadMessages` 是**整份替换** `this.messages`，而流式的占位消息是本地造的**负数 id**（§3.8），服务端列表里根本没有它。替换掉之后：
+
+   ```
+   占位消失 → onDelta 的 messages.find(id === placeholderId) 返回 undefined
+            → 每个 delta 静默丢弃（onDone / finally 也找不到占位）
+            → 用户看到：一个字都没出来就没了
+   ```
+
+   而且 `isStreaming` 会**正常复位、不报错**——界面上看不出任何异常。这是本次改动里唯一会造成**数据静默丢失**的点，必须挡在第一步。
+
+   > 更彻底的做法是「合并」而不是「整份替换」（保留本地负数 id 的消息）。**不采纳**：合并要处理同 id 覆盖、顺序、去重，复杂度远超收益；一次流通常只持续几秒，跳过这一次刷新没有可感知的代价。
+
+2. **`focus` 与 `visibilitychange` 都要监听，但要防重入。** 一次「切走 → 切回」可能连着触发两个事件：
+
+   | 场景 | `visibilitychange` | `window.focus` |
+   |---|---|---|
+   | 切到别的标签页再切回 | ✅ | ✅ |
+   | 点别的窗口再点回（浏览器**未被完全遮挡**） | ❌ **不触发** | ✅ |
+   | 浏览器被完全遮挡 | ✅ | ✅ |
+
+   第 2 行是**演示场景**（去 Postman / curl 触发主动消息再切回），只监听 `visibilitychange` 会整个漏掉。但两个都监听就会重复请求 → 用一个 **in-flight 标志**防重入（第二次事件在第一次请求未完成时直接返回）。
+
+   > **不用时间节流**：演示时「切走 → 触发 → 切回」可能只隔几秒，节流窗口设大了会把演示本身挡掉；设小了又挡不住双触发。in-flight 标志天然对齐「同一件事不并发做两次」这个真实约束。
+
+3. **`onBeforeUnmount` 里解绑。** 组件卸载（切去 `/personas` 等）后监听器若还挂着，之后每次切窗口都会对**已卸载的组件**发请求。`ChatView` 已有 `onBeforeUnmount`（绑着 `stopStreaming`），解绑放在同一个 hook 里。
+
+**顺带把一个口径钉死**：回前台刷新**只覆盖「离开又回来」**。用户一直盯着页面不动，主动消息到了仍然看不到——要真「实时」得轮询或长连接，而 `POST /chat/stream` 是一次性请求流、不是常驻订阅。这条已写进 spec §2.2 的「不做什么」，免得被读成「做完就实时了」。
+
 ---
 
 ## 4. 风险与对策
@@ -248,6 +287,8 @@ Mock 数据本身要覆盖几种边界：**3 个人设**（侧栏切换）、**�
 | 未登录时流的 401 处理不完整 | 用户卡在一个永远不动的流上 | §3.7 如实记为缺口，spec §5.2 待复验；先做「提示 + 引导重新登录」 |
 | 本支文件数超 AGENTS §6 约定 | 审计时被质疑范围失控 | §3.10 写明偏离理由 + 补偿措施，主动在 PR 描述里说明 |
 | `VITE_USE_MOCK` 开关误留 `true` 提交 | 生产环境跑 Mock 数据 | `.env.example` 里默认写 `false`；开关只写进 `.env`（不入库） |
+| **回前台刷新打断进行中的流** | **每个 `delta` 静默丢弃**，用户看到「回复凭空消失」，且不报错、`isStreaming` 正常复位 → 既难复现也难定位 | §3.11 守卫 1（`isStreaming` 时整体跳过）；spec §4.13 立为硬约束 |
+| `focus` + `visibilitychange` 双触发 | 一次切回发两轮请求（`/personas` 与 `/messages` 各 2 次） | §3.11 守卫 2（in-flight 标志防重入） |
 
 ---
 
@@ -259,5 +300,6 @@ Mock 数据本身要覆盖几种边界：**3 个人设**（侧栏切换）、**�
 | 2026-09-27 | — | `types/chat.ts`、`api/chat.ts`（抽出 `consumeStream` / `toChronological`）、`api/mock/{chat,index}.ts` 完成 |
 | 2026-09-29 | — | rebase 到 `751e8c3`（PR #47 合并后）；`api/mock/persona.ts` 取代本地 `MockPersona`；`stores/chat.ts` 完成，§3.8 临时 id 方案订正为负数计数器 |
 | 2026-09-29 | 5 | `components/chat/{TypingIndicator,MessageBubble,ChatInput}.vue`、`views/chat/ChatView.vue` 完成；`router/index.ts` L35 接入 `ChatView`；本机经 Mock 通道实测**跑通** |
+| 2026-10-06 | 11 | v4 增量：新增「离开又回来时刷新」（store `refreshActiveConversation()` + `ChatView` 监听 `visibilitychange` / `focus`）；同步 spec §2.2 / §4 第 13 条 / §5.3 |
 
 > 本机实测使用**手动写入的假登录态**（浏览器 Console 写 localStorage，key `heart-echo-auth`）——原因是本机无后端在跑（`localhost:8080` 无监听），而 `VITE_USE_MOCK` 只覆盖 `chatApi` 与 `listPersonas` 两个出口，**不含 `auth`**。这是本机调试手段，不代表跳过鉴权；验收清单中依赖真实响应头的项（spec §5.2）不受此影响。
