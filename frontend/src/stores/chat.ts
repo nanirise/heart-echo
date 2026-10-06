@@ -197,6 +197,8 @@ export const useChatStore = defineStore('chat', {
      */
     selectPersona(personaId: number): void {
       if (personaId === this.currentPersonaId) {
+        // 重新进入对话页：重载消息，让 readAt 跟上 lastMessageAt（红点消除）
+        void this.loadMessages(personaId)
         return
       }
 
