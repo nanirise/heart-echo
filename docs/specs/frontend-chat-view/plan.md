@@ -209,7 +209,7 @@ Mock 数据本身要覆盖几种边界：**3 个人设**（侧栏切换）、**�
 
 **为什么不用一个 `streamingText` 变量、结束后再 push 成消息**：那样消息列表与「正在流的内容」是两套东西，滚动定位、气泡样式、回车禁用都要写两遍。放进同一个列表里，**渲染逻辑只有一套**。
 
-**`isNudge` 的处理**（契约 §5）：主动消息注入时 `role` 仍是 `user`，但**不是用户打的字**。所以气泡的渲染判据**不能只看 `role`**——要 `role === 'user' && !isNudge` 才算「我发的」。本支按 [MEMBER_2_FRONTEND §3](../../dev/MEMBER_2_FRONTEND.md) 的说法处理：就把它当一条普通 AI 消息渲染，用 `isNudge` 做一点视觉区分（如浅色底）。
+**`isNudge` 的处理**（2026-10-06 变更）：注入行**不进消息列表**——过滤在 store 层（`loadMessages` 赋值处 `list.filter((item) => item.isNudge === false)`），气泡因此只需按 `role` 判断「我发的」。原方案「当普通 AI 消息渲染 + `isNudge` 视觉区分」已废弃：注入行的 `content` 就是字面 `[nudge]`（[proactive-message §1](../proactive-message/spec.md)），渲染出来是机器标记而非对话内容；留在 `messages` 里还会干扰 `retry()` 按 `role` 摘尾巴的判据（注入行的 `role` 也是 `user`）。`readAt` 校准仍用**过滤前**的原始数组（`lastMessageAt` 口径含注入行）。同步见 spec §5.2 第 5 条。
 
 ### 3.9 未读红点为什么不做成「独立功能」
 
@@ -219,7 +219,7 @@ Mock 数据本身要覆盖几种边界：**3 个人设**（侧栏切换）、**�
 
 所以红点是 **store 里的一个字段**（`Map<personaId, boolean>` 或给每个人设加 `hasUnread`），不是一套消息类型系统。要抵制的诱惑：给它设计 `type: 'unread'`、给它单独的事件、给它独立的接口——**都不需要**。本支只做「有/无」两态。
 
-> 主动消息的后端（`/proactive/trigger`、定时任务）本支完全不碰，红点在本支只有 Mock 数据能触发。
+> 主动消息的后端（`/proactive/trigger`、定时任务）本支完全不碰，红点由 `POST /proactive/trigger` 或定时任务触发均可（PR #64 后）。
 
 ### 3.10 为什么这支不拆成两支（对 AGENTS §6 的偏离说明）
 

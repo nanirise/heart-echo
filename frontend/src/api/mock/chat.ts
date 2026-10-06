@@ -81,7 +81,7 @@ function buildSseText(userContent: string): string {
 /**
  * 模拟后端：倒序返回（最新在前），交给 toChronological 翻成界面顺序。
  * personaId 为 1 时返回空数组，用于验证空对话态（契约 §5：200 + []，不是 4043）。
- * 中间那条 isNudge 的 role 仍是 user，但气泡不能按「我发的」渲染。
+ * 中间那条 isNudge 的行不应进入消息列表（store 层过滤），留在此处当过滤用例。
  */
 function mockBackendMessages(personaId: number): ChatMessage[] {
   if (personaId === 1) {

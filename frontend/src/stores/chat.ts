@@ -171,7 +171,8 @@ export const useChatStore = defineStore('chat', {
           return
         }
 
-        this.messages = list
+        // 注入行不进消息列表；readAt 仍需按原始 list 校准
+        this.messages = list.filter((item) => item.isNudge === false)
 
         // 消息已渲染到屏幕上 = 读到最新一条；用服务端 createdAt 校准已读位
         const newest = list[list.length - 1]

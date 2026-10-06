@@ -7,12 +7,8 @@ const props = defineProps<{
   message: ChatMessage
 }>()
 
-/**
- * 「我发的」不能只看 role：契约 §5 的主动消息（isNudge）role 也是 'user'，
- * 但那不是用户打的字，必须按 AI 侧渲染。
- * 这条判据在整支里只出现这一次，其他任何地方都不要再写一遍。
- */
-const isMine = computed(() => props.message.role === 'user' && props.message.isNudge === false)
+// isMine 只看 role；nudge 过滤在 store.loadMessages 层（.filter(isNudge === false)），不在本组件做第二次
+const isMine = computed(() => props.message.role === 'user')
 
 /**
  * content 为空串的占位消息不渲染气泡 —— 首个 delta 到达前的等待态由 TypingIndicator 负责。
@@ -22,7 +18,7 @@ const isMine = computed(() => props.message.role === 'user' && props.message.isN
 
 <template>
   <div v-if="message.content !== ''" class="row" :class="isMine ? 'row-mine' : 'row-theirs'">
-    <div class="bubble" :class="{ 'bubble-nudge': message.isNudge }">
+    <div class="bubble">
       {{ message.content }}
     </div>
   </div>
@@ -54,10 +50,5 @@ const isMine = computed(() => props.message.role === 'user' && props.message.isN
 
 .row-mine .bubble {
   background: var(--el-color-primary-light-9);
-}
-
-/* 主动消息：role 是 user 却渲染在 AI 侧，再加一道虚边框，免得看的人以为是数据错了 */
-.bubble-nudge {
-  border: 1px dashed var(--el-border-color);
 }
 </style>
