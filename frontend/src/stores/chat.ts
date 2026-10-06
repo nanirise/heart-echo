@@ -19,6 +19,9 @@ let lastSentContent = ''
 /** 本地临时消息的 id 计数器，只减不增 —— 生成的 id 全是负数，不会和真实 id 撞 */
 let tempSeq = 0
 
+/** 不是渲染状态，只是防重入的开关；用 ref 会让它出现在 devtools 里，还可能被别处订阅 */
+let refreshing = false
+
 /**
  * 时间串统一解析成毫秒再比较。
  * 列表与消息两端的时间格式 / 时区未必逐字一致，字符串比较会错位；
@@ -186,6 +189,29 @@ export const useChatStore = defineStore('chat', {
         }
 
         this.errorMessage = toErrorMessage(error, '网络异常，请检查网络后重试')
+      }
+    },
+
+    /** 回前台重拉：两道守卫缺一不可 —— isStreaming 时重拉会把流式占位消息挤掉，
+     * 导致 delta 静默丢弃；refreshing 挡的是 visibilitychange 与 focus 双触发
+     */
+    async refreshActiveConversation(): Promise<void> {
+      if (this.isStreaming || refreshing) {
+        return
+      }
+
+      console.log('[refresh] 重拉一次')
+
+      refreshing = true
+
+      try {
+        await this.loadPersonas()
+
+        if (this.currentPersonaId !== null) {
+          await this.loadMessages(this.currentPersonaId)
+        }
+      } finally {
+        refreshing = false
       }
     },
 
