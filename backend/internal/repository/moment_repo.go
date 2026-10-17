@@ -207,3 +207,66 @@ func (r *MomentRepo) CreateComment(
 ) error {
 	return tx.WithContext(ctx).Create(c).Error
 }
+
+// ---- 以下方法仅供定时任务（moment_job）调用，请求路径一律不得引用 ----
+
+// ListAllPersonasForJob 跨用户列出全部人设，供定时任务逐个人设生成动态。
+// 这是 spec §4.5 唯一允许的跨用户读方法：系统级任务不属于任何用户，返回行带 UserID + PersonaID。
+func (r *MomentRepo) ListAllPersonasForJob(ctx context.Context) ([]model.Persona, error) {
+	var list []model.Persona
+	err := r.db.WithContext(ctx).Find(&list).Error
+	return list, err
+}
+
+// GetRecentMomentTime 返回该人设最近一条动态的时间；从未发过时返回 nil。
+// 只按 persona_id 查：调用方是系统级任务，且返回值不回给任何用户。
+func (r *MomentRepo) GetRecentMomentTime(
+	ctx context.Context, personaID uint64,
+) (*time.Time, error) {
+	var rows []struct {
+		LastMomentAt *time.Time
+	}
+	err := r.db.WithContext(ctx).Model(&model.AIMoment{}).
+		Select("MAX(created_at) AS last_moment_at").
+		Where("persona_id = ?", personaID).
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	return rows[0].LastMomentAt, nil
+}
+
+// ListOtherPersonasInSameAccount 取同一账号下的其他人设，作为 AI 评论者。
+// user_id 条件不可省：否则 A 的动态下会出现 B 账号的人设名（ai-moment spec §4.6 反例 10）。
+func (r *MomentRepo) ListOtherPersonasInSameAccount(
+	ctx context.Context, userID, excludePersonaID uint64,
+) ([]model.Persona, error) {
+	var list []model.Persona
+	err := r.db.WithContext(ctx).
+		Where("user_id = ? AND id <> ?", userID, excludePersonaID).
+		Find(&list).Error
+	return list, err
+}
+
+// ListRecentEventsByPersona 取该人设近期的 event 类记忆，供模板填充生活事件槽位。
+// 两个条件都带：persona_id 隔离人设，user_id 是越权防线（AGENTS §4.3）。
+func (r *MomentRepo) ListRecentEventsByPersona(
+	ctx context.Context, userID, personaID uint64, limit int,
+) ([]string, error) {
+	var contents []string
+	err := r.db.WithContext(ctx).Model(&model.UserMemory{}).
+		Where("persona_id = ? AND user_id = ? AND memory_type = ?",
+			personaID, userID, model.MemoryTypeEvent).
+		Order("created_at DESC, id DESC").
+		Limit(limit).
+		Pluck("content", &contents).Error
+	return contents, err
+}
+
+// CreateMoment 落一条动态；动态只由定时任务产生，没有手动触发入口（AGENTS §4.6 / §7.5）。
+func (r *MomentRepo) CreateMoment(ctx context.Context, m *model.AIMoment) error {
+	return r.db.WithContext(ctx).Create(m).Error
+}

@@ -26,6 +26,9 @@ type Config struct {
 
 	// ProactiveJobInterval 是主动消息定时扫描的周期（定时任务一律在 Go 侧，AGENTS §4.8）
 	ProactiveJobInterval time.Duration `env:"PROACTIVE_JOB_INTERVAL" envDefault:"5m"`
+
+	// MomentJobInterval 是朋友圈动态生成的周期；同时用作同一人设的节流阈值（ai-moment spec §6.4）
+	MomentJobInterval time.Duration `env:"MOMENT_JOB_INTERVAL" envDefault:"30m"`
 }
 
 // ServerConfig 是 HTTP 服务本身的配置。
@@ -101,6 +104,12 @@ func (c Config) validate() error {
 		return fmt.Errorf(
 			"config: PROACTIVE_JOB_INTERVAL must be positive, got %s",
 			c.ProactiveJobInterval,
+		)
+	}
+	if c.MomentJobInterval <= 0 {
+		return fmt.Errorf(
+			"config: MOMENT_JOB_INTERVAL must be positive, got %s",
+			c.MomentJobInterval,
 		)
 	}
 	return nil
