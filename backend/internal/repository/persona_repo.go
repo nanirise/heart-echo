@@ -123,6 +123,39 @@ func (r *PersonaRepo) ExistsOwnedByUser(ctx context.Context, userID, personaID u
 	return count > 0, nil
 }
 
+// IncrementFamiliarity 把 state.familiarity 原子地加一，封顶 100。
+//
+// 亲密度存在 state JSONB 里（TECH_DESIGN §5.6），不能在 Go 里读出来 +1 再写回：
+// 两轮并发对话会互相覆盖，最终只涨一次。整条 UPDATE 只读一次当前值，行锁保证串行。
+//
+// jsonb_set 只替换 familiarity 一个键，state 里的其他键（如 self_note）原样保留。
+// 键缺失 / 非数字 / 负数都按 0 起算；非数字不做 CASE 判断会在 ::int 上抛 22P02，
+// 让一次普通的亲密度累加把整轮对话日志刷红。
+//
+// user_id 条件与 id 同等重要：调用方虽然都从 Token 取 userID，但仓储层不能假设，
+// 少了它就是一个能改别人人设的写口子（AGENTS §4.3）。
+func (r *PersonaRepo) IncrementFamiliarity(
+	ctx context.Context, tx *gorm.DB, userID, personaID uint64,
+) error {
+	return tx.WithContext(ctx).Exec(`
+		UPDATE personas
+		SET state = jsonb_set(
+			state,
+			'{familiarity}',
+			to_jsonb(LEAST(
+				COALESCE(
+					CASE WHEN jsonb_typeof(state -> 'familiarity') = 'number'
+						THEN (state ->> 'familiarity')::int
+					END,
+					0
+				) + 1,
+				100
+			))
+		)
+		WHERE id = ? AND user_id = ?`,
+		personaID, userID).Error
+}
+
 // TouchLastMessageAt 把该人设的"最近对话时间"推到当前时刻。
 //
 // 加入方：成员 1（chat_service 的消息落库链路），2026-10-05。本方法只做这一件事，

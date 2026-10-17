@@ -2,10 +2,12 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 
 	"github.com/nanirise/heart-echo/backend/internal/dto"
@@ -142,6 +144,9 @@ func (s *ChatService) buildAIRequest(
 		return ChatRequest{}, errcode.Wrap(errcode.ErrDBFailed, err)
 	}
 
+	// 关系阶段拼进 speaking_style：Python 的 PersonaBrief 是 extra="forbid"，
+	// 新增字段会直接 422；而 speaking_style 会原样进入 system prompt，
+	// 正好是「让模型按阶段换语气」的落点，无需改 Python（TECH_DESIGN §5.6）。
 	return ChatRequest{
 		UserID:    userID,
 		PersonaID: personaID,
@@ -149,10 +154,68 @@ func (s *ChatService) buildAIRequest(
 		Persona: &PersonaBrief{
 			Name:            persona.Name,
 			PersonalityDesc: persona.PersonalityDesc,
-			SpeakingStyle:   persona.SpeakingStyle,
+			SpeakingStyle:   speakingStyleWithStage(persona.SpeakingStyle, parseFamiliarity(persona.State)),
 		},
 		History: history,
 	}, nil
+}
+
+// parseFamiliarity 从 state JSONB 读亲密度；缺失 / 非数字 / 解析失败一律按 0（初识）。
+// 兜底与 dto.NewPersonaResponse 一致：同一份数据在列表页和 prompt 里不能给出两种阶段。
+func parseFamiliarity(state model.JSONB) int {
+	var parsed struct {
+		Familiarity int `json:"familiarity"`
+	}
+	if err := json.Unmarshal(state, &parsed); err != nil {
+		return 0
+	}
+	return clampFamiliarity(parsed.Familiarity)
+}
+
+func clampFamiliarity(value int) int {
+	if value < 0 {
+		return 0
+	}
+	if value > 100 {
+		return 100
+	}
+	return value
+}
+
+// relationshipStage 把亲密度映射成关系阶段与语气指令（TECH_DESIGN §5.6 的分档）。
+func relationshipStage(familiarity int) string {
+	switch {
+	case familiarity < 20:
+		return "初识。礼貌克制，不要过分亲昵，不使用昵称。"
+	case familiarity < 50:
+		return "熟悉。语气自然放松，可以开玩笑。"
+	case familiarity < 80:
+		return "亲近。可以主动关心对方的生活，使用昵称。"
+	default:
+		return "默契。语气随意，可以提起以前聊过的事，偶尔撒娇或吐槽。"
+	}
+}
+
+// speakingStyleWithStage 把关系阶段追加到说话风格后面，最终由 Python 拼进 system prompt。
+func speakingStyleWithStage(style string, familiarity int) string {
+	guide := "当前关系阶段：" + relationshipStage(familiarity)
+	if style == "" {
+		return guide
+	}
+	return style + "\n" + guide
+}
+
+// incrementFamiliarity 是回复成功后的附带效果：独立一条 UPDATE，失败只记日志。
+//
+// 刻意不放进 persistMessage 的事务：JSONB 更新一旦报错，Postgres 会中止整个事务，
+// 已经写好的 assistant 消息也会跟着回滚。亲密度只影响语气，不值得拿消息换。
+func (s *ChatService) incrementFamiliarity(ctx context.Context, userID, personaID uint64) {
+	if err := s.personaRepo.IncrementFamiliarity(ctx, s.db, userID, personaID); err != nil {
+		zap.L().Warn("increment familiarity failed",
+			zap.Uint64("userID", userID),
+			zap.Uint64("personaID", personaID),
+			zap.Error(err))
+	}
 }
 
 // recentHistory 取最近 historyLimit 条历史，转成**时间正序**（旧→新）。
@@ -301,6 +364,9 @@ func (s *ChatService) runStream(ctx context.Context, aiReq ChatRequest, ch chan<
 	}
 
 	emitChatEvent(ctx, ch, ChatEvent{Type: ChatEventDone, MessageID: assistant.ID})
+
+	// done 已经交给前端，累加放在它之后：亲密度慢一点无所谓，不能拖慢「回复完成」的感知
+	s.incrementFamiliarity(ctx, aiReq.UserID, aiReq.PersonaID)
 }
 
 // emitChatEvent 往 channel 推一个事件，返回 false 表示调用方已经不听了。
@@ -426,6 +492,9 @@ func (s *ChatService) InjectNudge(ctx context.Context, in NudgeInput) (*NudgeRes
 	if err != nil {
 		return nil, err
 	}
+
+	// 与 runStream 同一时机：assistant 已落库，再累加亲密度
+	s.incrementFamiliarity(ctx, in.UserID, in.PersonaID)
 
 	return &NudgeResult{
 		MessageID: assistant.ID,
