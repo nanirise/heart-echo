@@ -113,8 +113,9 @@ func (s *PersonaService) Update(
 			// 归属条件在 SQL 里，这里天然不区分"别人的"与"不存在的"
 			return errcode.New(errcode.ErrPersonaNotFound)
 		}
-		// 回读真值：state / familiarity / lastMessageAt 必须来自数据库，不手工拼装
-		p, err = s.personaRepo.FindOwned(ctx, userID, personaID)
+		// 回读真值：state / familiarity / lastMessageAt 必须来自数据库，不手工拼装。
+		// 必须走 tx：基座连接在 READ COMMITTED 下看不到本事务未提交的 UPDATE。
+		p, err = s.personaRepo.FindOwnedTx(ctx, tx, userID, personaID)
 		if err != nil {
 			return errcode.Wrap(errcode.ErrDBFailed, err)
 		}

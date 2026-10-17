@@ -51,8 +51,20 @@ func (r *PersonaRepo) ListByUser(ctx context.Context, userID uint64, offset, lim
 // FindOwned 读当前用户的某一行，未命中返回 gorm.ErrRecordNotFound。
 // 对"别人的 id"与"不存在的 id"返回同一个 not found，两者不可区分。
 func (r *PersonaRepo) FindOwned(ctx context.Context, userID, personaID uint64) (*model.Persona, error) {
+	return findOwned(ctx, r.db, userID, personaID)
+}
+
+// FindOwnedTx 在事务句柄上回读。必须用 tx 而不是基座连接：READ COMMITTED 下
+// 基座连接看不到本事务尚未提交的 UPDATE，会读到旧值。
+func (r *PersonaRepo) FindOwnedTx(
+	ctx context.Context, tx *gorm.DB, userID, personaID uint64,
+) (*model.Persona, error) {
+	return findOwned(ctx, tx, userID, personaID)
+}
+
+func findOwned(ctx context.Context, db *gorm.DB, userID, personaID uint64) (*model.Persona, error) {
 	var p model.Persona
-	err := r.db.WithContext(ctx).
+	err := db.WithContext(ctx).
 		Where("id = ? AND user_id = ?", personaID, userID).
 		First(&p).Error
 	if err != nil {
