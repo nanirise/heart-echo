@@ -49,7 +49,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '主动消息' },
       },
       { path: 'profile', name: 'Profile', component: () => import('@/views/profile/ProfileView.vue'), meta: { title: '用户画像' } },
-      { path: 'moments', name: 'Moments', component: Placeholder, meta: { title: '朋友圈' } },
+      {
+        path: 'moments',
+        name: 'Moments',
+        component: () => import('@/views/moments/MomentsView.vue'),
+        meta: { title: '朋友圈' },
+      },
       { path: 'schedules', name: 'Schedule', component: Placeholder, meta: { title: '日程提醒' } },
     ],
   },
