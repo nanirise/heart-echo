@@ -63,6 +63,10 @@ func NewRouter(cfg *config.Config, logger *zap.Logger, db *gorm.DB) *gin.Engine 
 	proactiveService := service.NewProactiveService(db, chatService)
 	RegisterProactiveRoutes(protected, NewProactiveHandler(proactiveService))
 
+	// 朋友圈（契约 §8）。动态由 main.go 的定时任务产生，这里只有读、点赞、评论四个端点。
+	momentService := service.NewMomentService(db)
+	RegisterMomentRoutes(protected, NewMomentHandler(momentService))
+
 	// 用户资料三个端点（契约 §3.4-3.6）与 persona 一样需鉴权：
 	// 它们改的是"令牌里那个人"，没有 userID 入参，所以必须挂 protected 而不是 api。
 	RegisterUserRoutes(protected, authHandler)

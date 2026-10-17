@@ -55,6 +55,16 @@ func main() {
 	proactiveJob := service.NewProactiveJob(proactiveSvc, cfg.ProactiveJobInterval, appLogger)
 	go proactiveJob.Run(jobCtx)
 
+	// 朋友圈动态生成（阶段一模板生成，不依赖 ai-service）；
+	// 没有手动触发入口，动态只由本任务产生（AGENTS §4.6 / §7.5）。
+	momentJob := service.NewMomentJob(
+		db,
+		service.NewTemplateGenerator(),
+		cfg.MomentJobInterval,
+		appLogger,
+	)
+	go momentJob.Run(jobCtx)
+
 	srv := &http.Server{
 		// 不写 host 就是监听 0.0.0.0。容器里必须如此，
 		// 绑成 127.0.0.1 会让同网络的其他容器连不上（AGENTS §4.10）。
