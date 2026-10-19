@@ -248,26 +248,21 @@ async function refreshSilently(): Promise<void> {
   // 初次加载正在进行时交给 loadFirstPage，不并发拉两份
   if (refreshing.value || loading.value) return
 
-  // 已经翻过页就不能整份替换：会把人正看的第 N 页冲成第 1 页、滚动位置跳回顶部。
-  // 此时只更新总数，让「加载更多」拿到新的 total 即可。
-  if (page.value > 1) {
-    try {
-      const result = await getMoments(1, MOMENT_PAGE_SIZE)
-      total.value = result.total
-    } catch {
-      // 静默失败：页面已有可用数据，下次回前台再试，不打扰用户
-    }
-    return
-  }
-
+  // 去重必须覆盖两个分支：从别的应用切回来时 visibilitychange 与 focus 会各触发一次，
+  // 只在整份替换那支加锁的话，已翻页的用户会被并发打两次同一个请求
   refreshing.value = true
   try {
     const result = await getMoments(1, MOMENT_PAGE_SIZE)
-    moments.value = result.list
     total.value = result.total
+
+    // 已经翻过页就不能整份替换：会把人正看的第 N 页冲成第 1 页、滚动位置跳回顶部。
+    // 此时只更新总数，让「加载更多」拿到新的 total 即可。
+    if (page.value > 1) return
+
+    moments.value = result.list
     page.value = result.page
   } catch {
-    // 同上：静默刷新失败不弹提示，避免用户什么都没做却看到报错
+    // 静默刷新失败不弹提示：页面已有可用数据，下次回前台再试
   } finally {
     refreshing.value = false
   }
