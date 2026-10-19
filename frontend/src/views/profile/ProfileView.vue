@@ -4,8 +4,13 @@ import { useRouter } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
 
 import { toErrorMessage } from '@/api/error'
+import { PERSONA_PAGE_SIZE, listPersonas } from '@/api/persona'
+import { getPortrait } from '@/api/profile'
 import { useAuthStore } from '@/stores/auth'
 import type { ProfilePatch } from '@/stores/auth'
+import type { Persona } from '@/types/persona'
+import type { PortraitResponse } from '@/types/profile'
+import { formatDateTime } from '@/utils/datetime'
 
 import PasswordDialog from './PasswordDialog.vue'
 
@@ -47,6 +52,82 @@ const avatarSrc = computed<string | undefined>(() => {
 
 /** 契约 §3.5：avatarUrl 传 null 清空时，前端用用户名首字母兜底 */
 const avatarFallback = computed(() => (authStore.user?.username ?? '?').charAt(0).toUpperCase())
+
+/* ---------- 画像区块：与人设绑定，一人设一份 ---------- */
+
+const personas = ref<Persona[]>([])
+const selectedPersonaId = ref<number | null>(null)
+const portrait = ref<PortraitResponse | null>(null)
+const portraitLoading = ref(true)
+
+/** profileData 的键由提取链路决定，值是 unknown，统一转成可读字符串 */
+function formatProfileValue(value: unknown): string {
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  if (Array.isArray(value)) return value.map((item) => formatProfileValue(item)).join('、')
+
+  return JSON.stringify(value)
+}
+
+/**
+ * 空对象 / 全为空值的对象都算「还没画像」。
+ * 后端现在恒返回 {}，但提取链路一旦产出，这里不用改就能显示。
+ */
+const portraitEntries = computed<Array<[string, string]>>(() => {
+  const data = portrait.value?.profileData
+  if (data === undefined) return []
+
+  return Object.entries(data)
+    .filter(([, value]) => value !== null && value !== undefined && value !== '')
+    .map(([key, value]): [string, string] => [key, formatProfileValue(value)])
+})
+
+async function loadPortrait(personaId: number): Promise<void> {
+  portraitLoading.value = true
+  try {
+    portrait.value = await getPortrait(personaId)
+  } catch {
+    // 契约 §7 该端点仍是 ⬜，阶段一的提取链路也不产出 profile_updates；
+    // 接口没通时按空态呈现，不把「服务尚未上线」表现成页面报错
+    portrait.value = null
+  } finally {
+    portraitLoading.value = false
+  }
+}
+
+async function loadPersonas(): Promise<void> {
+  portraitLoading.value = true
+  try {
+    const result = await listPersonas(1, PERSONA_PAGE_SIZE)
+    personas.value = result.list
+
+    // 保留当前选择（重试场景）；列表里没有它了就落回第一个
+    const target =
+      personas.value.find((item) => item.id === selectedPersonaId.value) ?? personas.value[0]
+
+    if (target === undefined) {
+      portrait.value = null
+      portraitLoading.value = false
+      return
+    }
+
+    selectedPersonaId.value = target.id
+    await loadPortrait(target.id)
+  } catch {
+    personas.value = []
+    portrait.value = null
+    portraitLoading.value = false
+  }
+}
+
+function handlePortraitPersonaChange(personaId: number): void {
+  void loadPortrait(personaId)
+}
+
+// 独立于账号资料的加载：画像接口没通时不该把「账号资料」一起拖成空白
+onMounted(() => {
+  void loadPersonas()
+})
 
 function syncForm(): void {
   form.username = authStore.user?.username ?? ''
@@ -144,7 +225,54 @@ function handlePasswordChanged(): void {
 <template>
   <div class="profile-view">
     <el-card class="profile-card">
-      <h2 class="card-title">账号资料</h2>
+      <div class="card-head">
+        <h2 class="section-title">我的画像</h2>
+
+        <!-- 画像跟着人设走：切到谁就看谁 -->
+        <el-select
+          v-if="personas.length > 0"
+          v-model="selectedPersonaId"
+          class="persona-select"
+          :disabled="portraitLoading"
+          @change="handlePortraitPersonaChange"
+        >
+          <el-option
+            v-for="persona in personas"
+            :key="persona.id"
+            :label="persona.name"
+            :value="persona.id"
+          />
+        </el-select>
+      </div>
+
+      <el-skeleton v-if="portraitLoading" :rows="3" animated />
+
+      <el-empty v-else-if="personas.length === 0" description="还没有人设" :image-size="60">
+        <el-button type="primary" @click="router.push({ name: 'Persona' })">去人设管理</el-button>
+      </el-empty>
+
+      <div v-else-if="portraitEntries.length === 0" class="portrait-empty">
+        <p class="portrait-empty-title">暂无画像数据</p>
+        <p class="portrait-empty-hint">
+          请在对话中多提及自己（如喜好、工作等），AI 会为你生成画像。
+        </p>
+      </div>
+
+      <template v-else>
+        <dl class="portrait-list">
+          <div v-for="([label, value]) in portraitEntries" :key="label" class="portrait-item">
+            <dt class="portrait-label">{{ label }}</dt>
+            <dd class="portrait-value">{{ value }}</dd>
+          </div>
+        </dl>
+        <p v-if="portrait !== null" class="portrait-updated">
+          更新于 {{ formatDateTime(portrait.updatedAt) }}
+        </p>
+      </template>
+    </el-card>
+
+    <el-card class="profile-card">
+      <h2 class="section-title">账号资料</h2>
 
       <p v-if="loading" class="hint">加载中…</p>
 
@@ -184,7 +312,7 @@ function handlePasswordChanged(): void {
     </el-card>
 
     <el-card class="profile-card">
-      <h2 class="card-title">安全</h2>
+      <h2 class="section-title">安全</h2>
       <p class="hint">修改密码后需要重新登录。</p>
       <el-button @click="passwordVisible = true">修改密码</el-button>
     </el-card>
@@ -197,19 +325,83 @@ function handlePasswordChanged(): void {
 .profile-view {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  max-width: 520px;
+  gap: var(--app-gap);
+  max-width: var(--app-width-form);
 }
 
-.card-title {
-  margin: 0 0 16px;
-  font-size: 16px;
+.card-head {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--app-gap);
+}
+
+/* 全局 .section-title 自带 16px 下边距，放进标题行里会把下拉顶歪 */
+.card-head .section-title {
+  margin-bottom: 0;
+}
+
+.persona-select {
+  width: 180px;
+}
+
+.portrait-empty {
+  padding: 12px 0 4px;
+}
+
+.portrait-empty-title {
+  margin: 0 0 var(--spacing-unit);
+  font-size: var(--el-font-size-base);
   font-weight: 500;
+  color: var(--color-text-main);
+}
+
+.portrait-empty-hint {
+  margin: 0;
+  font-size: var(--el-font-size-small);
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+}
+
+.portrait-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+}
+
+.portrait-item {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.portrait-label {
+  flex: 0 0 96px;
+  font-size: var(--el-font-size-small);
+  color: var(--color-text-secondary);
+}
+
+.portrait-value {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--el-font-size-base);
+  line-height: 1.6;
+  color: var(--color-text-main);
+  word-break: break-word;
+}
+
+.portrait-updated {
+  margin: 12px 0 0;
+  font-size: var(--el-font-size-extra-small);
+  color: var(--color-text-placeholder);
 }
 
 .hint {
   margin: 0 0 12px;
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   color: var(--el-text-color-secondary);
 }
 
