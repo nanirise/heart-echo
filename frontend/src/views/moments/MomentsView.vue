@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 
 import { toErrorMessage } from '@/api/error'
@@ -234,8 +234,55 @@ async function handleSendComment(moment: MomentItem): Promise<void> {
   }
 }
 
+/** 静默刷新在飞的标记：visibilitychange 与 focus 会同时触发，靠它去重 */
+const refreshing = ref(false)
+
+/**
+ * 回前台刷新。
+ *
+ * 朋友圈的动态只由后台定时任务产出（契约 §8 没有手动触发接口），
+ * 但这个页面只在 onMounted 拉一次 —— 用户切到别的标签页待一会儿再回来，
+ * 看到的还是离开前那一份，必须先刷新整页才能看到新动态。
+ */
+async function refreshSilently(): Promise<void> {
+  // 初次加载正在进行时交给 loadFirstPage，不并发拉两份
+  if (refreshing.value || loading.value) return
+
+  // 去重必须覆盖两个分支：从别的应用切回来时 visibilitychange 与 focus 会各触发一次，
+  // 只在整份替换那支加锁的话，已翻页的用户会被并发打两次同一个请求
+  refreshing.value = true
+  try {
+    const result = await getMoments(1, MOMENT_PAGE_SIZE)
+    total.value = result.total
+
+    // 已经翻过页就不能整份替换：会把人正看的第 N 页冲成第 1 页、滚动位置跳回顶部。
+    // 此时只更新总数，让「加载更多」拿到新的 total 即可。
+    if (page.value > 1) return
+
+    moments.value = result.list
+    page.value = result.page
+  } catch {
+    // 静默刷新失败不弹提示：页面已有可用数据，下次回前台再试
+  } finally {
+    refreshing.value = false
+  }
+}
+
+function handleForeground(): void {
+  // 切到后台时 visibilitychange 也会触发，那一次不需要刷新
+  if (document.visibilityState !== 'visible') return
+  void refreshSilently()
+}
+
 onMounted(() => {
   void loadFirstPage()
+  document.addEventListener('visibilitychange', handleForeground)
+  window.addEventListener('focus', handleForeground)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('visibilitychange', handleForeground)
+  window.removeEventListener('focus', handleForeground)
 })
 </script>
 
@@ -384,18 +431,12 @@ onMounted(() => {
 
 <style scoped>
 .moments-page {
-  max-width: 680px;
+  max-width: var(--app-width-prose);
   margin: 0 auto;
 }
 
 .page-header {
-  margin-bottom: 16px;
-}
-
-.page-title {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 500;
+  margin-bottom: var(--app-gap);
 }
 
 .page-error {
@@ -417,10 +458,6 @@ onMounted(() => {
   gap: 12px;
 }
 
-.moment-card {
-  border-radius: 8px;
-}
-
 .moment-head {
   display: flex;
   gap: 10px;
@@ -435,7 +472,7 @@ onMounted(() => {
   width: 36px;
   height: 36px;
   border-radius: 8px;
-  color: #fff;
+  color: var(--el-color-white);
   font-size: 16px;
   font-weight: 500;
 }
@@ -482,7 +519,7 @@ onMounted(() => {
   align-items: center;
   padding: 4px 10px;
   border: none;
-  border-radius: 999px;
+  border-radius: var(--el-border-radius-round);
   background: transparent;
   color: var(--el-text-color-secondary);
   font-size: 13px;
@@ -575,7 +612,7 @@ onMounted(() => {
 
 .comment-time {
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: var(--el-font-size-extra-small);
   color: var(--el-text-color-placeholder);
 }
 

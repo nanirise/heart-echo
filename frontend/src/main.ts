@@ -3,6 +3,8 @@ import { createPinia } from 'pinia'
 import piniaPluginPersistedstate from 'pinia-plugin-persistedstate'
 import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
+// 必须排在 Element Plus 之后：它覆写的是 Element Plus 定义在 :root 上的变量
+import '@/styles/global.css'
 import router from '@/router'
 
 
