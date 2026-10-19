@@ -55,7 +55,12 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/moments/MomentsView.vue'),
         meta: { title: '朋友圈' },
       },
-      { path: 'schedules', name: 'Schedule', component: Placeholder, meta: { title: '日程提醒' } },
+      {
+        path: 'schedules',
+        name: 'Schedule',
+        component: () => import('@/views/schedule/ScheduleView.vue'),
+        meta: { title: '日程提醒' },
+      },
     ],
   },
   // 404 必须显式 false：否则未登录访问不存在的路径会被守卫拦到登录页，永远看不到 404

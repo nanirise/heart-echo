@@ -1,0 +1,39 @@
+import { ApiError, request } from '@/api/request'
+import { ErrorCode } from '@/types/errcode'
+import type { PageResult } from '@/types/api'
+import type { ScheduleItem } from '@/types/schedule'
+
+/**
+ * 每页条数。契约默认 20、上限 100，显式传而不是靠后端默认值 ——
+ * 「是否还有下一页」的判据必须和后端实际用的 pageSize 是同一个数。
+ */
+export const SCHEDULE_PAGE_SIZE = 20
+
+/**
+ * 某个人的日程列表。
+ *
+ * `personaId` 是必传的：日程和记忆一样是「一人设一份」，缺了它后端返回 4001
+ * （参数层就拦下，此时还没有归属可供校验）。`user_id` 永远不传，从 Token 取。
+ */
+export function listSchedules(
+  personaId: number,
+  page = 1,
+  pageSize = SCHEDULE_PAGE_SIZE,
+): Promise<PageResult<ScheduleItem>> {
+  return request.get<PageResult<ScheduleItem>>('/schedules', {
+    params: { personaId, page, pageSize },
+  })
+}
+
+/**
+ * 取消日程。**软删除**：服务端把 status 置为 cancelled，不物理删行，
+ * 所以返回值是 null，列表里那条仍然存在。重复删除同一条是幂等的。
+ */
+export function cancelSchedule(id: number): Promise<null> {
+  return request.delete<null>(`/schedules/${id}`)
+}
+
+/** 4040：这条日程已不存在或不属于当前账号，界面数据已过期，需要重拉 */
+export function isScheduleNotFound(error: unknown): boolean {
+  return error instanceof ApiError && error.code === ErrorCode.ErrNotFound
+}
