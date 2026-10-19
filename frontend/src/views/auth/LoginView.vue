@@ -125,12 +125,12 @@ async function handleSubmit(): Promise<void> {
 }
 
 .auth-card {
-  width: 360px;
+  width: var(--app-width-auth);
 }
 
 .auth-title {
   margin: 0 0 20px;
-  font-size: 20px;
+  font-size: var(--el-font-size-extra-large);
   font-weight: 500;
   text-align: center;
 }
@@ -145,7 +145,7 @@ async function handleSubmit(): Promise<void> {
 
 .auth-switch {
   margin: 16px 0 0;
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   text-align: center;
 }
 

@@ -13,6 +13,7 @@ import {
   likeMoment,
 } from '@/api/moment'
 import type { CommentItem, MomentItem } from '@/types/moment'
+import { formatDateTime } from '@/utils/datetime'
 
 /** 单条动态的评论区本地状态；首次展开时才创建并拉取 */
 interface CommentState {
@@ -53,17 +54,6 @@ const momentViews = computed(() =>
     comments: commentStates[moment.id] ?? null,
   })),
 )
-
-/** 契约时间是 RFC3339（可能带 6 位小数），交给 Date 解析，不按字符串切片 */
-function formatDateTime(value: string): string {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '—'
-
-  const pad = (part: number): string => String(part).padStart(2, '0')
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(
-    date.getHours(),
-  )}:${pad(date.getMinutes())}`
-}
 
 /** 头像色块：按名字哈希到固定色相，同一个人设每次进页面颜色一致 */
 function avatarColor(name: string): string {
@@ -292,18 +282,27 @@ onBeforeUnmount(() => {
       <h2 class="page-title">朋友圈</h2>
     </header>
 
-    <el-skeleton v-if="loading" :rows="4" animated />
+    <!-- 骨架也放进卡片：数据到达时容器形状不变，不会先塌一下再撑开 -->
+    <el-card v-if="loading" shadow="never">
+      <el-skeleton :rows="4" animated />
+    </el-card>
 
     <div v-else-if="errorMessage !== ''" class="page-error">
       <el-alert :title="errorMessage" type="error" show-icon :closable="false" />
-      <el-button @click="loadFirstPage">重试</el-button>
+      <div class="state-actions">
+        <el-button type="primary" @click="loadFirstPage">重试</el-button>
+        <span class="state-tip">若反复失败，可能是网络或服务暂时不可用</span>
+      </div>
     </div>
 
-    <el-empty v-else-if="moments.length === 0" description="还没有动态">
-      <p class="empty-hint">AI 伴侣会定时发布动态，稍后再来看看。</p>
-      <RouterLink :to="{ name: 'Persona' }">
-        <el-button>去人设管理</el-button>
-      </RouterLink>
+    <el-empty v-else-if="moments.length === 0" description="还没有动态" :image-size="80">
+      <p class="empty-hint">AI 伴侣会按设定间隔自己发动态，先去和 TA 聊聊，或者稍后再来看看。</p>
+      <div class="state-actions">
+        <RouterLink :to="{ name: 'Persona' }">
+          <el-button type="primary">去人设管理</el-button>
+        </RouterLink>
+        <el-button @click="loadFirstPage">刷新看看</el-button>
+      </div>
     </el-empty>
 
     <template v-else>
@@ -446,10 +445,22 @@ onBeforeUnmount(() => {
   gap: 12px;
 }
 
+.state-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-unit);
+  align-items: center;
+}
+
+.state-tip {
+  font-size: var(--el-font-size-extra-small);
+  color: var(--color-text-placeholder);
+}
+
 .empty-hint {
   margin: 0 0 12px;
-  font-size: 13px;
-  color: var(--el-text-color-secondary);
+  font-size: var(--el-font-size-small);
+  color: var(--color-text-secondary);
 }
 
 .moment-list {
@@ -471,9 +482,9 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
   width: 36px;
   height: 36px;
-  border-radius: 8px;
+  border-radius: var(--el-card-border-radius);
   color: var(--el-color-white);
-  font-size: 16px;
+  font-size: var(--el-font-size-medium);
   font-weight: 500;
 }
 
@@ -486,43 +497,43 @@ onBeforeUnmount(() => {
 
 .persona-name {
   overflow: hidden;
-  font-size: 14px;
+  font-size: var(--el-font-size-base);
   font-weight: 500;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 
 .moment-time {
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
+  font-size: var(--el-font-size-extra-small);
+  color: var(--color-text-secondary);
 }
 
 .moment-content {
   margin: 12px 0;
-  font-size: 14px;
+  font-size: var(--el-font-size-base);
   line-height: 1.7;
-  color: var(--el-text-color-primary);
+  color: var(--color-text-main);
   white-space: pre-wrap;
   word-break: break-word;
 }
 
 .moment-actions {
   display: flex;
-  gap: 8px;
-  padding-top: 8px;
+  gap: var(--spacing-unit);
+  padding-top: var(--spacing-unit);
   border-top: 1px solid var(--el-border-color-lighter);
 }
 
 .action-btn {
   display: inline-flex;
-  gap: 4px;
+  gap: calc(var(--spacing-unit) / 2);
   align-items: center;
-  padding: 4px 10px;
+  padding: calc(var(--spacing-unit) / 2) 10px;
   border: none;
   border-radius: var(--el-border-radius-round);
   background: transparent;
-  color: var(--el-text-color-secondary);
-  font-size: 13px;
+  color: var(--color-text-secondary);
+  font-size: var(--el-font-size-small);
   cursor: pointer;
   transition:
     background-color 0.15s,
@@ -531,7 +542,7 @@ onBeforeUnmount(() => {
 
 .action-btn:hover {
   background: var(--el-fill-color-light);
-  color: var(--el-text-color-primary);
+  color: var(--color-text-main);
 }
 
 .action-btn:disabled {
@@ -557,44 +568,44 @@ onBeforeUnmount(() => {
 
 .comment-hint,
 .comment-empty {
-  margin: 0 0 8px;
-  font-size: 13px;
-  color: var(--el-text-color-secondary);
+  margin: 0 0 var(--spacing-unit);
+  font-size: var(--el-font-size-small);
+  color: var(--color-text-secondary);
 }
 
 .comment-error {
   display: flex;
-  gap: 8px;
+  gap: var(--spacing-unit);
   align-items: center;
-  margin-bottom: 8px;
+  margin-bottom: var(--spacing-unit);
 }
 
 .comment-error-text {
   flex: 1;
   min-width: 0;
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   color: var(--el-color-danger);
 }
 
 .comment-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin: 0 0 8px;
+  gap: var(--spacing-unit);
+  margin: 0 0 var(--spacing-unit);
   padding: 0;
   list-style: none;
 }
 
 .comment-item {
   display: flex;
-  gap: 8px;
+  gap: var(--spacing-unit);
   align-items: baseline;
   justify-content: space-between;
 }
 
 .comment-line {
   min-width: 0;
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   line-height: 1.6;
 }
 
@@ -605,7 +616,7 @@ onBeforeUnmount(() => {
 }
 
 .comment-content {
-  color: var(--el-text-color-primary);
+  color: var(--color-text-main);
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -613,27 +624,27 @@ onBeforeUnmount(() => {
 .comment-time {
   flex-shrink: 0;
   font-size: var(--el-font-size-extra-small);
-  color: var(--el-text-color-placeholder);
+  color: var(--color-text-placeholder);
 }
 
 .comment-more {
-  margin-bottom: 4px;
+  margin-bottom: calc(var(--spacing-unit) / 2);
 }
 
 .comment-form {
   display: flex;
-  gap: 8px;
+  gap: var(--spacing-unit);
   align-items: center;
 }
 
 .load-more {
   display: flex;
   justify-content: center;
-  margin-top: 16px;
+  margin-top: var(--app-gap);
 }
 
 .list-end {
-  font-size: 12px;
-  color: var(--el-text-color-placeholder);
+  font-size: var(--el-font-size-extra-small);
+  color: var(--color-text-placeholder);
 }
 </style>
