@@ -193,13 +193,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 16px;
-}
-
-.page-title {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 500;
+  margin-bottom: var(--app-gap);
 }
 
 .page-error {
@@ -217,7 +211,7 @@ onMounted(() => {
 
 .persona-name {
   margin: 0 0 8px;
-  font-size: 16px;
+  font-size: var(--el-font-size-medium);
   font-weight: 500;
 }
 
@@ -225,7 +219,7 @@ onMounted(() => {
 .persona-field {
   margin: 0 0 6px;
   overflow: hidden;
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   line-height: 1.5;
   color: var(--el-text-color-regular);
   white-space: pre-wrap;
@@ -252,7 +246,7 @@ onMounted(() => {
   flex-wrap: wrap;
   gap: 4px 12px;
   margin: 12px 0;
-  font-size: 12px;
+  font-size: var(--el-font-size-extra-small);
   color: var(--el-text-color-secondary);
 }
 

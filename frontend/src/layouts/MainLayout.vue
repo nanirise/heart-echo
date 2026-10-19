@@ -53,30 +53,30 @@ function handleLogout(): void {
 .sidebar {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--app-gap);
   flex-shrink: 0;
   width: 200px;
-  padding: 16px 12px;
-  border-right: 1px solid var(--el-border-color);
+  padding: var(--app-gap) 12px;
+  border-right: 1px solid var(--color-border);
 }
 
 .brand {
-  padding: 0 8px;
-  font-size: 18px;
+  padding: 0 var(--spacing-unit);
+  font-size: var(--el-font-size-large);
   font-weight: 500;
 }
 
 .nav {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: calc(var(--spacing-unit) / 2);
   flex: 1;
 }
 
 .nav-item {
-  padding: 8px 12px;
-  border-radius: 6px;
-  font-size: 14px;
+  padding: var(--spacing-unit) 12px;
+  border-radius: var(--border-radius-base);
+  font-size: var(--el-font-size-base);
   color: inherit;
   text-decoration: none;
 }
@@ -88,13 +88,13 @@ function handleLogout(): void {
 .user {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 0 8px;
+  gap: var(--spacing-unit);
+  padding: 0 var(--spacing-unit);
 }
 
 .username {
   overflow: hidden;
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   white-space: nowrap;
   text-overflow: ellipsis;
 }
@@ -102,6 +102,6 @@ function handleLogout(): void {
 .content {
   flex: 1;
   min-width: 0;
-  padding: 24px;
+  padding: var(--app-gutter);
 }
 </style>

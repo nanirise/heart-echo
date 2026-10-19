@@ -1,22 +1,35 @@
 /**
- * 全站设计令牌。
+ * 全站设计令牌 —— 唯一的样式源头。
+ *
+ * 结构分两层：
+ *   1. 语义层（--font-family / --color-* / --border-radius-base / --spacing-unit）
+ *      页面里只引用这一层，它不依赖任何 UI 库。
+ *   2. 映射层（--el-*）把 Element Plus 的内部变量指到语义层上，
+ *      组件库与自写样式因此共用同一套值，不会各走一套。
  *
  * 引入顺序有硬约束：必须在 element-plus/dist/index.css 之后（见 main.ts）。
- * 反了会被 Element Plus 的 :root 默认值盖掉，而且不会报任何错，只是样式不生效。
+ * 反了会被 Element Plus 的 :root 默认值盖掉，而且不会报错，只是样式不生效。
  */
 
-body {
-  margin: 0;
-  font-family:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
-    'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
-}
-
 :root {
-  /*
-   * 字号只保留六档。数值与 Element Plus 默认值相同，显式写出来是为了把规范
-   * 钉在代码里：以后要调整，改这里一处，全站跟着走。
-   */
+  /* ---------- 语义层 ---------- */
+
+  /* 中文排在英文字体之后：否则中文会回退到系统默认的宋体，与英文粗细不匹配 */
+  --font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', Arial, sans-serif;
+
+  --color-primary: #409eff;
+  --color-text-main: #303133;
+  --color-text-secondary: #909399;
+  --color-text-placeholder: #a8abb2;
+  --color-bg: #ffffff;
+  --color-border: #dcdfe6;
+
+  --border-radius-base: 6px;
+  --spacing-unit: 8px;
+
+  /* ---------- 字号阶梯：六档 ---------- */
   --el-font-size-extra-large: 20px;
   --el-font-size-large: 18px;
   --el-font-size-medium: 16px;
@@ -24,21 +37,43 @@ body {
   --el-font-size-small: 13px;
   --el-font-size-extra-small: 12px;
 
-  /* 圆角三档：控件 6px / 卡片 8px / 胶囊 999px */
+  /* ---------- 圆角：控件 6px / 卡片 8px / 胶囊 999px ---------- */
   --el-border-radius-small: 4px;
-  --el-border-radius-base: 6px;
   --el-border-radius-round: 999px;
   --el-card-border-radius: 8px;
 
-  /* 内容宽度两档：长文列表 680px / 表单与设置 520px */
-  --app-width-prose: 680px;
+  /*
+   * 内容宽度三档：认证卡片 360px / 表单与设置 520px / 长文列表 680px。
+   * 令牌的作用是「同一个数只写一次」，不是限制档数。
+   */
+  --app-width-auth: 360px;
   --app-width-form: 520px;
-  --app-gap: 16px;
+  --app-width-prose: 680px;
+  --app-gap: calc(var(--spacing-unit) * 2);
+  /* 内容区四周留白。ChatView 要按它反推可视高度，两处必须引用同一个值 */
+  --app-gutter: calc(var(--spacing-unit) * 3);
+
+  /* ---------- 映射层：Element Plus 跟随语义层 ---------- */
+  --el-font-family: var(--font-family);
+  --el-color-primary: var(--color-primary);
+  --el-text-color-primary: var(--color-text-main);
+  --el-text-color-secondary: var(--color-text-secondary);
+  --el-text-color-placeholder: var(--color-text-placeholder);
+  --el-bg-color: var(--color-bg);
+  --el-border-color: var(--color-border);
+  --el-border-color-base: var(--color-border);
+  --el-border-radius-base: var(--border-radius-base);
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-family);
+  color: var(--color-text-main);
+  background: var(--color-bg);
 }
 
 /*
  * 页面标题与区块标题。
- * 原先各页在 scoped <style> 里各写一份、值完全一致；提到这里之后，
  * 组件内必须删掉同名规则 —— scoped 会生成 [data-v-xxx]，优先级高于这个类。
  */
 .page-title {
