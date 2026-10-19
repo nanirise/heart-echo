@@ -39,9 +39,9 @@ const isMine = computed(() => props.message.role === 'user')
 
 .bubble {
   max-width: 70%;
-  padding: 8px 12px;
-  border-radius: 8px;
-  font-size: 14px;
+  padding: var(--spacing-unit) 12px;
+  border-radius: var(--el-card-border-radius);
+  font-size: var(--el-font-size-base);
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;

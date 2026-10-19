@@ -197,11 +197,11 @@ function handleRetry(): void {
 
 <style scoped>
 /* .content（MainLayout）没有确定高度，`height: 100%` 会塌成 0、内部滚动条失效；
-   layout 的 min-height 是 100vh、content 上下 padding 各 24px，所以减去 48px */
+   layout 的 min-height 是 100vh，content 上下各留 --app-gutter，所以减两份 */
 .chat-view {
   display: flex;
-  gap: 16px;
-  height: calc(100vh - 48px);
+  gap: var(--app-gap);
+  height: calc(100vh - var(--app-gutter) * 2);
 }
 
 .persona-list {
@@ -211,19 +211,19 @@ function handleRetry(): void {
   width: 180px;
   overflow-y: auto;
   padding-right: 12px;
-  border-right: 1px solid var(--el-border-color);
+  border-right: 1px solid var(--color-border);
 }
 
 .list-hint {
   margin: 0;
-  font-size: 13px;
-  color: var(--el-text-color-secondary);
+  font-size: var(--el-font-size-small);
+  color: var(--color-text-secondary);
 }
 
 .list-items {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: calc(var(--spacing-unit) / 2);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -233,8 +233,8 @@ function handleRetry(): void {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 8px 10px;
-  border-radius: 6px;
+  padding: var(--spacing-unit) 10px;
+  border-radius: var(--border-radius-base);
   color: inherit;
   text-decoration: none;
 }
@@ -251,7 +251,7 @@ function handleRetry(): void {
   display: flex;
   gap: 6px;
   align-items: center;
-  font-size: 14px;
+  font-size: var(--el-font-size-base);
   font-weight: 500;
 }
 
@@ -263,8 +263,8 @@ function handleRetry(): void {
 }
 
 .item-meta {
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
+  font-size: var(--el-font-size-extra-small);
+  color: var(--color-text-secondary);
 }
 
 .conversation {
@@ -276,20 +276,20 @@ function handleRetry(): void {
 
 .conversation-head {
   padding-bottom: 12px;
-  border-bottom: 1px solid var(--el-border-color);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .conversation-name {
   margin: 0;
-  font-size: 16px;
+  font-size: var(--el-font-size-medium);
   font-weight: 500;
 }
 
 .conversation-desc {
   margin: 4px 0 0;
   overflow: hidden;
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
+  font-size: var(--el-font-size-extra-small);
+  color: var(--color-text-secondary);
   white-space: nowrap;
   text-overflow: ellipsis;
 }
@@ -300,29 +300,29 @@ function handleRetry(): void {
   gap: 12px;
   flex: 1;
   overflow-y: auto;
-  padding: 16px 4px;
+  padding: var(--app-gap) 4px;
 }
 
 .conversation-empty {
   margin: auto;
-  font-size: 13px;
-  color: var(--el-text-color-secondary);
+  font-size: var(--el-font-size-small);
+  color: var(--color-text-secondary);
 }
 
 .chat-error {
   display: flex;
-  gap: 8px;
+  gap: var(--spacing-unit);
   align-items: center;
-  margin-bottom: 8px;
-  padding: 8px 12px;
-  border-radius: 6px;
+  margin-bottom: var(--spacing-unit);
+  padding: var(--spacing-unit) 12px;
+  border-radius: var(--border-radius-base);
   background: var(--el-color-danger-light-9);
 }
 
 .error-text {
   flex: 1;
   min-width: 0;
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   color: var(--el-color-danger);
 }
 </style>

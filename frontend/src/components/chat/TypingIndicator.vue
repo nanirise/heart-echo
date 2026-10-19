@@ -11,10 +11,10 @@
 <style scoped>
 .typing {
   align-self: flex-start;
-  padding: 8px 12px;
-  border-radius: 8px;
-  font-size: 13px;
-  color: var(--el-text-color-secondary);
+  padding: var(--spacing-unit) 12px;
+  border-radius: var(--el-card-border-radius);
+  font-size: var(--el-font-size-small);
+  color: var(--color-text-secondary);
   background: var(--el-fill-color-light);
 }
 </style>

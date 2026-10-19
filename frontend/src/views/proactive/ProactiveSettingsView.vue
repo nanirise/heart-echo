@@ -8,6 +8,7 @@ import { listPersonas, proactiveApi } from '@/api/mock'
 import { PERSONA_PAGE_SIZE } from '@/api/persona'
 import type { Persona } from '@/types/persona'
 import type { SettingsResponse } from '@/types/proactive'
+import { formatDateTime } from '@/utils/datetime'
 
 const router = useRouter()
 
@@ -91,17 +92,6 @@ const rules: FormRules<typeof form> = {
       trigger: 'change',
     },
   ],
-}
-
-/** 契约的时间是 RFC3339，交给 Date 解析 —— 按字符串切片在精度或时区变化时会静默错位 */
-function formatDateTime(value: string): string {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '—'
-
-  const pad = (part: number): string => String(part).padStart(2, '0')
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(
-    date.getHours(),
-  )}:${pad(date.getMinutes())}`
 }
 
 /** 加载与保存共用：保存后回填能显示服务端规范化（夹取）后的值 */
@@ -212,7 +202,7 @@ onMounted(() => {
 <template>
   <div class="proactive-view">
     <el-card class="settings-card">
-      <h2 class="card-title">主动消息设置</h2>
+      <h2 class="section-title">主动消息设置</h2>
 
       <el-skeleton v-if="loading" :rows="4" animated />
 
@@ -320,19 +310,13 @@ onMounted(() => {
 
 <style scoped>
 .proactive-view {
-  max-width: 520px;
-}
-
-.card-title {
-  margin: 0 0 16px;
-  font-size: 16px;
-  font-weight: 500;
+  max-width: var(--app-width-form);
 }
 
 .hint {
   margin: 0 0 12px;
-  font-size: 13px;
-  color: var(--el-text-color-secondary);
+  font-size: var(--el-font-size-small);
+  color: var(--color-text-secondary);
 }
 
 .page-state {
@@ -356,7 +340,7 @@ onMounted(() => {
 
 .nudge-hint {
   margin: 12px 0 0;
-  font-size: 13px;
-  color: var(--el-text-color-secondary);
+  font-size: var(--el-font-size-small);
+  color: var(--color-text-secondary);
 }
 </style>
