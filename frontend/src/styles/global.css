@@ -1,0 +1,54 @@
+/**
+ * 全站设计令牌。
+ *
+ * 引入顺序有硬约束：必须在 element-plus/dist/index.css 之后（见 main.ts）。
+ * 反了会被 Element Plus 的 :root 默认值盖掉，而且不会报任何错，只是样式不生效。
+ */
+
+body {
+  margin: 0;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
+}
+
+:root {
+  /*
+   * 字号只保留六档。数值与 Element Plus 默认值相同，显式写出来是为了把规范
+   * 钉在代码里：以后要调整，改这里一处，全站跟着走。
+   */
+  --el-font-size-extra-large: 20px;
+  --el-font-size-large: 18px;
+  --el-font-size-medium: 16px;
+  --el-font-size-base: 14px;
+  --el-font-size-small: 13px;
+  --el-font-size-extra-small: 12px;
+
+  /* 圆角三档：控件 6px / 卡片 8px / 胶囊 999px */
+  --el-border-radius-small: 4px;
+  --el-border-radius-base: 6px;
+  --el-border-radius-round: 999px;
+  --el-card-border-radius: 8px;
+
+  /* 内容宽度两档：长文列表 680px / 表单与设置 520px */
+  --app-width-prose: 680px;
+  --app-width-form: 520px;
+  --app-gap: 16px;
+}
+
+/*
+ * 页面标题与区块标题。
+ * 原先各页在 scoped <style> 里各写一份、值完全一致；提到这里之后，
+ * 组件内必须删掉同名规则 —— scoped 会生成 [data-v-xxx]，优先级高于这个类。
+ */
+.page-title {
+  margin: 0;
+  font-size: var(--el-font-size-large);
+  font-weight: 500;
+}
+
+.section-title {
+  margin: 0 0 var(--app-gap);
+  font-size: var(--el-font-size-medium);
+  font-weight: 500;
+}
