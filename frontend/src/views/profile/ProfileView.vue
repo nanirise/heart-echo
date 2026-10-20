@@ -73,6 +73,10 @@ function formatProfileValue(value: unknown): string {
  * 空对象 / 全为空值的对象都算「还没画像」。
  * 后端现在恒返回 {}，但提取链路一旦产出，这里不用改就能显示。
  */
+/**
+ * 空对象 / 全为空值的对象都算「还没画像」。
+ * 键集合由提取链路决定，这里按 entries 泛化渲染 —— 出现新键不用改代码。
+ */
 const portraitEntries = computed<Array<[string, string]>>(() => {
   const data = portrait.value?.profileData
   if (data === undefined) return []
@@ -82,13 +86,29 @@ const portraitEntries = computed<Array<[string, string]>>(() => {
     .map(([key, value]): [string, string] => [key, formatProfileValue(value)])
 })
 
+/**
+ * 「更新于」的展示文本。契约 §7：尚未生成画像时 `updatedAt` 为 `null`。
+ *
+ * null 不能直接交给 formatDateTime —— `new Date(null)` 被当成 epoch，
+ * 会渲染成 1970-01-01 而不是兜底符。这里收敛成空串，渲染层只判空。
+ *
+ * 先判 `portrait` 再判 `updatedAt`（而不是用可选链）：可选链会往类型里掺进
+ * `undefined`，把「updatedAt 到底可不可空」这条信息糊掉，类型写错也不会报。
+ */
+const portraitUpdatedText = computed<string>(() => {
+  const current = portrait.value
+  if (current === null) return ''
+
+  return current.updatedAt === null ? '' : formatDateTime(current.updatedAt)
+})
+
 async function loadPortrait(personaId: number): Promise<void> {
   portraitLoading.value = true
   try {
     portrait.value = await getPortrait(personaId)
   } catch {
-    // 契约 §7 该端点仍是 ⬜，阶段一的提取链路也不产出 profile_updates；
-    // 接口没通时按空态呈现，不把「服务尚未上线」表现成页面报错
+    // 画像只是本页的次要信息源，请求失败时按空态呈现，
+    // 不把一个可选区块表现成整页报错
     portrait.value = null
   } finally {
     portraitLoading.value = false
@@ -265,8 +285,8 @@ function handlePasswordChanged(): void {
             <dd class="portrait-value">{{ value }}</dd>
           </div>
         </dl>
-        <p v-if="portrait !== null" class="portrait-updated">
-          更新于 {{ formatDateTime(portrait.updatedAt) }}
+        <p v-if="portraitUpdatedText !== ''" class="portrait-updated">
+          更新于 {{ portraitUpdatedText }}
         </p>
       </template>
     </el-card>
