@@ -47,13 +47,16 @@ func main() {
 	// 主动消息定时扫描（AGENTS §4.8：定时任务一律在 Go 侧）；
 	// 与手动端点共用同一个 TriggerNow（spec §4）。
 	jobCtx, cancelJob := context.WithCancel(context.Background())
-	// [假设] 这里与 router.go 各建一个 ChatService / AIClient 实例：两条链路共享 db、
-	// 不共享状态，各自演化不影响。代价是两套到 ai-service 的连接池（AIClient 用默认
-	// http.Client，无连接数上限，可接受）。若将来 Week 3 的 emotion / memory 要复用
-	// 同一个实例，再把 AIClient 提到这里建一次、由 NewRouter 传参。
-	proactiveSvc := service.NewProactiveService(db, service.NewChatService(db, service.NewAIClient(cfg.AI)))
+	// 主动消息与日程提醒都是「注入 [nudge] → 走正常聊天链路」，共用同一个 ChatService：
+	// 落库 / 取历史的逻辑只有一份，两条链路不会各自演化出不同行为。
+	// 注意 router.go 的请求链路仍会另建一套（两边无共享状态，各自的连接池互不影响）。
+	jobChat := service.NewChatService(db, service.NewAIClient(cfg.AI))
+	proactiveSvc := service.NewProactiveService(db, jobChat)
+	scheduleSvc := service.NewScheduleService(db, jobChat)
 	proactiveJob := service.NewProactiveJob(proactiveSvc, cfg.ProactiveJobInterval, appLogger)
+	scheduleJob := service.NewScheduleJob(scheduleSvc, cfg.ProactiveJobInterval, appLogger)
 	go proactiveJob.Run(jobCtx)
+	go scheduleJob.Run(jobCtx)
 
 	// 朋友圈动态生成（阶段一模板生成，不依赖 ai-service）；
 	// 没有手动触发入口，动态只由本任务产生（AGENTS §4.6 / §7.5）。

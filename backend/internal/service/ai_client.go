@@ -66,16 +66,32 @@ const (
 	EventError = "error"
 )
 
+// ScheduleParseResult 是 POST /schedule/parse 的结果（TECH_DESIGN §5.7）。
+//
+// HasIntent=false 表示这句话不是提醒委托（陈述句），调用方不应建日程也不应回问；
+// NeedClarify=true 表示有意图但时间/事件没解析出来，调用方应让 AI 回问。
+// RemindAt 用指针：Python 在非成功出口不返回该字段，nil 与"零值时间"必须能区分。
+type ScheduleParseResult struct {
+	HasIntent   bool
+	NeedClarify bool
+	Content     string
+	RemindAt    *time.Time
+}
+
 // AIClient 是 Go 侧调用 Python AI 服务的唯一出入口。
 //
-// 只放 StreamChat：TECH_DESIGN §5.0 规划的完整形状还有 AnalyzeEmotion /
-// ExtractMemories，那是后续的事，没有实现的接口方法只会变成噪音。
+// 只放已经落地的内部端点：流式对话 + 日程解析。TECH_DESIGN §5.0 规划的
+// AnalyzeEmotion / ExtractMemories 尚未实现，不在这里预留空方法。
 type AIClient interface {
 	// StreamChat 发起一次流式生成。
 	//
 	// 返回的 error 只表示"没能开始"（连不上 / 非 200）：函数把 channel 交出去
 	// 就返回了，之后再出的错没有机会走 error，只能从 channel 里发 EventError。
 	StreamChat(ctx context.Context, req ChatRequest) (<-chan StreamEvent, error)
+
+	// ParseSchedule 调 Python 规则解析器，把用户原话解析成日程。
+	// 只负责一次内部 HTTP 调用，不落库、不判断归属（那些在 ChatService 里做）。
+	ParseSchedule(ctx context.Context, message string) (*ScheduleParseResult, error)
 }
 
 type aiHTTPClient struct {
@@ -166,6 +182,67 @@ func (c *aiHTTPClient) StreamChat(ctx context.Context, req ChatRequest) (<-chan 
 	}()
 
 	return ch, nil
+}
+
+// ParseSchedule 调用 ai-service 的规则解析器（TECH_DESIGN §5.7）。
+//
+// 返回值可能是三种互斥形态，由调用方按 HasIntent / NeedClarify 分流；
+// 本方法不把"解析不出"当错误——陈述句与需要澄清都是正常答案，不是故障。
+func (c *aiHTTPClient) ParseSchedule(
+	ctx context.Context, message string,
+) (*ScheduleParseResult, error) {
+	body, err := json.Marshal(map[string]string{"message": message})
+	if err != nil {
+		return nil, errcode.Wrap(errcode.ErrInternal, err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(
+		ctx, http.MethodPost, c.baseURL+"/schedule/parse", bytes.NewReader(body),
+	)
+	if err != nil {
+		return nil, errcode.Wrap(errcode.ErrInternal, err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("X-Internal-Token", c.token)
+
+	resp, err := c.http.Do(httpReq)
+	if err != nil {
+		return nil, errcode.Wrap(errcode.ErrAIUnavailable, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, errcode.Wrap(
+			errcode.ErrAIUnavailable, fmt.Errorf("ai-service status %d", resp.StatusCode),
+		)
+	}
+
+	// remind_at 用 *string 而不是 *time.Time：三个出口里只有成功那一个带该字段，
+	// 且空字符串必须按"没给"处理，不能因为一个空值把整次解析判成失败。
+	var payload struct {
+		HasIntent   bool    `json:"has_intent"`
+		NeedClarify bool    `json:"need_clarify"`
+		Content     string  `json:"content"`
+		RemindAt    *string `json:"remind_at"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return nil, errcode.Wrap(errcode.ErrInternal, err)
+	}
+
+	result := &ScheduleParseResult{
+		HasIntent:   payload.HasIntent,
+		NeedClarify: payload.NeedClarify,
+		Content:     payload.Content,
+	}
+	if payload.RemindAt != nil && *payload.RemindAt != "" {
+		// RFC3339Nano 同时接受带小数秒和不带小数秒的形态；
+		// 规则解析器当前不带小数秒，换成 LLM 解析后可能带。
+		remindAt, err := time.Parse(time.RFC3339Nano, *payload.RemindAt)
+		if err != nil {
+			return nil, errcode.Wrap(errcode.ErrInternal, err)
+		}
+		result.RemindAt = &remindAt
+	}
+	return result, nil
 }
 
 // splitSSEBlock 按 \n\n 切块，切出来的内容不含结尾那两个换行。
