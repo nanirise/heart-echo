@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -67,5 +68,46 @@ func TestSpeakingStyleWithStage(t *testing.T) {
 	styled := speakingStyleWithStage("温柔", 80)
 	if !strings.HasPrefix(styled, "温柔\n") || !strings.Contains(styled, "默契") {
 		t.Fatalf("应保留原风格并追加阶段，实际 %q", styled)
+	}
+}
+
+// TestIsValidMemoryType 钉住只有 fact / preference / event 能落库。
+// LLM 可能返回 emotion 等非法值，必须丢弃而不是原样写入（user-memory spec §3.3）。
+func TestIsValidMemoryType(t *testing.T) {
+	for _, memoryType := range []model.MemoryType{
+		model.MemoryTypeFact, model.MemoryTypePreference, model.MemoryTypeEvent,
+	} {
+		if !isValidMemoryType(memoryType) {
+			t.Errorf("%q 应当是合法记忆类型", memoryType)
+		}
+	}
+	for _, memoryType := range []model.MemoryType{"emotion", "FACT", ""} {
+		if isValidMemoryType(memoryType) {
+			t.Errorf("%q 不应是合法记忆类型", memoryType)
+		}
+	}
+}
+
+// TestNormalizeProfileUpdates 钉住空画像不触发 upsert：
+// 空对象会把 updated_at 刷新，制造"画像刚更新过"的假信息（user-profile spec §4.6）。
+func TestNormalizeProfileUpdates(t *testing.T) {
+	cases := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{"字段缺失", "", ""},
+		{"null", "null", ""},
+		{"空对象", "{}", ""},
+		{"有画像键", `{"occupation":"程序员"}`, `{"occupation":"程序员"}`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := normalizeProfileUpdates(json.RawMessage(tc.raw))
+			if string(got) != tc.want {
+				t.Errorf("应返回 %q，实际 %q", tc.want, got)
+			}
+		})
 	}
 }

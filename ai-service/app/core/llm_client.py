@@ -106,6 +106,38 @@ def build_client() -> AsyncOpenAI:
     )
 
 
+async def complete_json(system_prompt: str, user_prompt: str) -> str:
+    """非流式调用，要求模型返回一个 JSON 对象（记忆提取用）。
+
+    response_format 只是提示而不是保证：调用方仍要自己 json.loads 并校验字段。
+    失败与流式生成同样收口成 LLMUnavailableError —— 调用方只关心"这次调用没成"。
+    """
+    settings = get_settings()
+    client = build_client()
+
+    try:
+        response = await client.chat.completions.create(
+            model=settings.deepseek_model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            # 提示模型输出纯 JSON；DeepSeek 要求 prompt 里出现 "JSON" 字样才启用。
+            response_format={"type": "json_object"},
+            max_tokens=settings.llm_max_tokens,
+        )
+    except Exception as exc:
+        logger.warning("DeepSeek call failed: %s", exc)
+        raise LLMUnavailableError(str(exc)) from exc
+
+    if not response.choices:
+        raise LLMUnavailableError("DeepSeek returned no choices")
+    content = response.choices[0].message.content
+    if not content:
+        raise LLMUnavailableError("DeepSeek returned empty content")
+    return content
+
+
 async def stream_reply(
     message: str,
     persona: PersonaLike | None = None,

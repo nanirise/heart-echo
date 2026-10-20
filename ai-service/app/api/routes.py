@@ -1,11 +1,13 @@
 import json
 from collections.abc import AsyncIterator
 from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.agents.memory_agent import build_memory_extractor
 from app.core.llm_client import LLMUnavailableError, stream_reply
 from app.core.security import verify_internal_token
 from app.schedules.rule_parser import has_reminder_intent, parse_schedule
@@ -86,6 +88,32 @@ class ScheduleParseResponse(BaseModel):
     content: str | None = None
     remind_at: datetime | None = None
     need_clarify: bool | None = None
+
+
+class MemoryExtractRequest(BaseModel):
+    """Go → Python 的记忆提取请求（TECH_DESIGN §5.3）。
+
+    只收用户原话：归属字段（user_id / persona_id）由 Go 侧从本轮对话补上，
+    本服务不连数据库，也不该知道这条记忆属于谁。
+    """
+
+    message: str = Field(min_length=1)
+    model_config = ConfigDict(extra="forbid")
+
+
+class MemoryItem(BaseModel):
+    """候选记忆。恰好三个字段，与 Phase 2 的输出契约逐字一致。"""
+
+    memory_type: str
+    content: str
+    importance_score: float
+
+
+class MemoryExtractResponse(BaseModel):
+    """提取结果。memories 为空列表而不是 null；profile_updates 没有时给 {}。"""
+
+    memories: list[MemoryItem]
+    profile_updates: dict[str, Any]
 
 
 @router.get("/health")
@@ -193,4 +221,18 @@ async def parse_schedule_endpoint(req: ScheduleParseRequest) -> ScheduleParseRes
         need_clarify=False,
         content=parsed.content,
         remind_at=parsed.remind_at,
+    )
+
+
+@router.post("/memory/extract", dependencies=[Depends(verify_internal_token)])
+async def extract_memory(req: MemoryExtractRequest) -> MemoryExtractResponse:
+    """从一轮用户消息里提取候选记忆与画像更新（TECH_DESIGN §5.3）。
+
+    只返回候选，不落库：user_id / persona_id 由 Go 侧赋值（user-memory spec §3.3）。
+    MEMORY_EXTRACT_BACKEND 决定本轮用规则还是 LLM；切换不改变本端点的契约。
+    """
+    result = await build_memory_extractor().extract(req.message.strip())
+    return MemoryExtractResponse(
+        memories=[MemoryItem(**candidate.as_contract()) for candidate in result.memories],
+        profile_updates=result.profile_updates,
     )

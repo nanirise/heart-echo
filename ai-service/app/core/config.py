@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -24,6 +25,10 @@ class Settings(BaseSettings):
     deepseek_model: str = "deepseek-flash"
     llm_timeout_seconds: float = 60.0
     llm_max_tokens: int = 4096
+
+    # 记忆提取的阶段开关（AGENTS §4.7）：rule 走正则，llm 走 DeepSeek 结构化提取。
+    # 用 Literal 而不是 str：拼错时服务启动即失败，不会静默退回规则档。
+    memory_extract_backend: Literal["rule", "llm"] = "rule"
 
 
 @lru_cache
