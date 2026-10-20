@@ -94,3 +94,25 @@ body {
   font-size: var(--el-font-size-medium);
   font-weight: 500;
 }
+
+/*
+ * 窄屏收紧留白。
+ *
+ * 变量本身不能写进 @media 条件（`@media (max-width: var(--x))` 不生效），
+ * 但在 @media 内部重新赋值是允许的。`:root` 优先级相同、靠出现顺序覆盖，
+ * 所以这一段必须留在文件末尾。
+ *
+ * 卡片内边距必须写在 `.el-card` 上，不能挂在 `:root`：Element Plus 把
+ * `--el-card-padding` 定义在 `.el-card` 自己身上（theme-chalk/index.css），
+ * 元素自身的声明优先于从祖先继承的值，写在 `:root` 里不会生效。
+ * `.el-card__body` 的 padding 直接取这个变量，全站 11 处卡片一处覆盖即够。
+ */
+@media (max-width: 768px) {
+  :root {
+    --app-gutter: calc(var(--spacing-unit) * 2);
+  }
+
+  .el-card {
+    --el-card-padding: 16px;
+  }
+}

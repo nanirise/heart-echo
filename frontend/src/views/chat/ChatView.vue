@@ -304,7 +304,8 @@ function handleRetry(): void {
   gap: 12px;
   flex: 1;
   overflow-y: auto;
-  padding: var(--app-gap) 4px;
+  /* 左右留 8px：4px 时气泡与容器边缘几乎贴合，滚动条出现后显得更挤 */
+  padding: var(--app-gap) var(--spacing-unit);
 }
 
 .conversation-empty {

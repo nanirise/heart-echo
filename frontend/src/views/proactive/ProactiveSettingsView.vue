@@ -343,4 +343,14 @@ onMounted(() => {
   font-size: var(--el-font-size-small);
   color: var(--color-text-secondary);
 }
+
+/*
+ * 窄屏下表单只有一列，下拉固定 240px 会占掉容器的四分之三，右边缘参差不齐。
+ * 数字输入保持 160px —— 值最多四位数，拉满反而难看。
+ */
+@media (max-width: 768px) {
+  .persona-select {
+    width: 100%;
+  }
+}
 </style>

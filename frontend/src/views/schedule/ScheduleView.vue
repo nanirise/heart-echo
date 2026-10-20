@@ -394,4 +394,11 @@ onMounted(() => {
   font-size: var(--el-font-size-extra-small);
   color: var(--color-text-placeholder);
 }
+
+/* 窄屏下 200px 的下拉在内容区里占比过大，拉满更整齐 */
+@media (max-width: 768px) {
+  .persona-select {
+    width: 100%;
+  }
+}
 </style>
