@@ -6,7 +6,7 @@
 | 项 | 值 |
 |----|-----|
 | 分支 | `feature/frontend-profile-settings` |
-| 状态 | ✅ 已完成（待合并） |
+| 状态 | ✅ 已实现并合并（2026-10-20 状态同步；原状态「已完成（待合并）」——PR #54 已合并） |
 | 依赖分支 | 无（自 `develop` `09a0e7b` 直接切出） |
 | 关联契约 | [API_CONTRACT](../../API_CONTRACT.md) §3.4 / §3.5 / §3.6 |
 | 关联设计 | [TECH_DESIGN](../../TECH_DESIGN.md) §3 |

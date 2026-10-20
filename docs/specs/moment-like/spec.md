@@ -9,7 +9,7 @@
 | 项 | 值 |
 |----|-----|
 | 分支 | `feature/backend-moment-like-model` |
-| 状态 | v1.3 模型层已交付合并（PR #38），代码已落地，API 层另开分支 |
+| 状态 | ✅ **已实现并合并 / 已上线**（2026-10-20 状态同步：`POST /moments/:id/like` 已上线，点赞幂等）。**原状态保留**：v1.3 模型层已交付合并（PR #38），代码已落地，API 层另开分支——API 层现已落地 |
 | **本支范围** | **模型层：`MomentLike` struct + `migrate.go` 一行**（§0.1） |
 | 负责人 | 成员 3（`JMX2033`） |
 | 依赖分支 | `feature/backend-ai-moment-model`、`feature/backend-moment-comment-model`（**均已合并进 main**） |

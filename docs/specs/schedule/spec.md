@@ -9,7 +9,7 @@
 | 项 | 值 |
 |----|-----|
 | 分支 | `feature/backend-schedule-model` |
-| 状态 | v1 待人工审查（**未过审不动手写代码**） |
+| 状态 | ✅ **已实现并合并**（2026-10-20 状态同步：模型层 + 三端点均已上线，`ScheduleJob` 定时扫描、`/trigger` 复用 `TriggerNow`）。**原状态保留**：v1 待人工审查（**未过审不动手写代码**）——该门禁已在实现落地后解除 |
 | **本支范围** | **模型层：`Schedule` struct + `migrate.go` 一行**（§0.1） |
 | 负责人 | 成员 3（`JMX2033`） |
 | 依赖分支 | `feature/backend-moment-like-model` 及其余 9 张表的 model 分支（**均已合并进 main**） |

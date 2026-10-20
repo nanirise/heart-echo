@@ -1,7 +1,7 @@
 # spec · 前端数据契约层
 
 > 功能名：frontend-api-types ｜ 分支：`feature/frontend-api-types`
-> 负责人：成员 2（前端） ｜ 状态：进行中
+> 负责人：成员 2（前端） ｜ 状态：✅ 已实现并合并（2026-10-20 状态同步；原状态「进行中」已过期）
 > 创建：2026-09-14 ｜ 最后更新：2026-09-14
 > 关联：[协作文档](../../COLLABORATION.md) ｜ [接口契约](../../API_CONTRACT.md) ｜ [技术文档](../../TECH_DESIGN.md)
 

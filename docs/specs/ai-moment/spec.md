@@ -6,7 +6,7 @@
 | 项 | 值 |
 |----|-----|
 | 分支 | `feature/backend-ai-moment-model` |
-| 状态 | ✅ v1.1 已按 9 条决策收尾，待人工审查 |
+| 状态 | ✅ **已实现并合并 / 已上线**（2026-10-20 状态同步：四端点 + `MomentJob` 定时生成均落地）。**原状态保留**：v1.1 已按 9 条决策收尾，待人工审查 |
 | **本支范围** | **模型层：`AIMoment` struct + `migrate.go` 一行**（§0） |
 | 负责人 | 成员 3（`JMX2033`） |
 | 依赖分支 | `feature/persona-model`（已合并）、`feature/persona-crud`（已合并） |

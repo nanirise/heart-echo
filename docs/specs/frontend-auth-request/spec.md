@@ -6,7 +6,7 @@
 | 项 | 值 |
 |----|-----|
 | 分支 | `feature/frontend-auth-request` |
-| 状态 | ✅ 代码完成，待合并 |
+| 状态 | ✅ 已实现并合并（2026-10-20 状态同步；原状态「代码完成，待合并」——已合并） |
 | 依赖分支 | `feature/frontend-api-types`（已合并 40e9105） |
 | 关联契约 | `docs/API_CONTRACT.md` §1 §2 §3 |
 
