@@ -104,4 +104,65 @@ function handleLogout(): void {
   min-width: 0;
   padding: var(--app-gutter);
 }
+
+/*
+ * 窄屏：竖排侧栏固定 200px 会吃掉半屏宽（375px 屏下主内容只剩 127px 可用），
+ * 改成一条横向可滚动的顶栏。断点 768px 与 ChatView 保持一致 ——
+ * 自定义属性不能用在 @media 条件里，只能两边手写同一个值。
+ */
+@media (max-width: 768px) {
+  .layout {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    flex-direction: row;
+    flex-shrink: 0;
+    align-items: center;
+    gap: var(--spacing-unit);
+    width: auto;
+    height: var(--app-nav-height);
+    padding: 0 var(--app-gap);
+    border-right: none;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .brand {
+    flex-shrink: 0;
+    padding: 0;
+    font-size: var(--el-font-size-base);
+  }
+
+  /* min-width: 0 是让 flex 子项能小于内容宽度，否则 overflow-x 永远不触发 */
+  .nav {
+    flex-direction: row;
+    flex: 1;
+    min-width: 0;
+    gap: 4px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .nav-item {
+    padding: 6px 10px;
+    white-space: nowrap;
+  }
+
+  .user {
+    flex-direction: row;
+    flex-shrink: 0;
+    align-items: center;
+    padding: 0;
+  }
+
+  /* 窄屏空间要留给导航，用户名是纯噪音；退出按钮保留 */
+  .username {
+    display: none;
+  }
+}
+
 </style>
