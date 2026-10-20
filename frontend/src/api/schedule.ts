@@ -39,7 +39,7 @@ export function isScheduleNotFound(error: unknown): boolean {
 }
 
 /**
- * 立即触发一条日程的提醒（演示与提前提醒用）。
+ * 立即触发一条日程的提醒，不必等到 `remindAt`。
  *
  * 无请求体：`personaId` 由服务端从这条日程行上取，前端不传也不该传。
  *
