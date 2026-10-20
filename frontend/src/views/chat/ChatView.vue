@@ -197,11 +197,15 @@ function handleRetry(): void {
 
 <style scoped>
 /* .content（MainLayout）没有确定高度，`height: 100%` 会塌成 0、内部滚动条失效；
-   layout 的 min-height 是 100vh，content 上下各留 --app-gutter，所以减两份 */
+   layout 的 min-height 是 100vh，content 上下各留 --app-gutter，所以减两份。
+
+   两行写是有意的：iOS Safari 的 100vh 含地址栏，真机上输入框会被顶出可视区；
+   dvh 跟随可视视口。不支持的浏览器会忽略第二行，退回 vh。 */
 .chat-view {
   display: flex;
   gap: var(--app-gap);
   height: calc(100vh - var(--app-gutter) * 2);
+  height: calc(100dvh - var(--app-gutter) * 2);
 }
 
 .persona-list {
@@ -324,5 +328,56 @@ function handleRetry(): void {
   min-width: 0;
   font-size: var(--el-font-size-small);
   color: var(--el-color-danger);
+}
+
+/*
+ * 窄屏：人设列表从竖排侧栏改成横向选择条，对话区占满剩余高度。
+ * 可视高度要扣掉 MainLayout 顶部新增的导航条（--app-nav-height），
+ * 否则整块会比可视区高，输入框被推到屏幕外。
+ */
+@media (max-width: 768px) {
+  .chat-view {
+    flex-direction: column;
+    height: calc(100vh - var(--app-nav-height) - var(--app-gutter) * 2);
+    height: calc(100dvh - var(--app-nav-height) - var(--app-gutter) * 2);
+  }
+
+  .persona-list {
+    flex-direction: row;
+    width: auto;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0 0 var(--spacing-unit);
+    border-right: none;
+    border-bottom: 1px solid var(--color-border);
+    scrollbar-width: none;
+  }
+
+  .persona-list::-webkit-scrollbar {
+    display: none;
+  }
+
+  .list-items {
+    flex-direction: row;
+    gap: var(--spacing-unit);
+  }
+
+  .list-item {
+    min-width: 88px;
+  }
+
+  /* 空态插图在 56px 高的横条里放不下，只留文案与按钮 */
+  .persona-list :deep(.el-empty__image) {
+    display: none;
+  }
+
+  .persona-list :deep(.el-empty) {
+    padding: var(--spacing-unit) 0;
+  }
+
+  /* column 布局下必须允许收缩，否则消息区会把输入框顶出可视区 */
+  .conversation {
+    min-height: 0;
+  }
 }
 </style>

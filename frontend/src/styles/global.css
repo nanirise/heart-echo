@@ -52,6 +52,13 @@
   --app-gap: calc(var(--spacing-unit) * 2);
   /* 内容区四周留白。ChatView 要按它反推可视高度，两处必须引用同一个值 */
   --app-gutter: calc(var(--spacing-unit) * 3);
+  /*
+   * 窄屏顶部导航条高度。ChatView 要按它反推可视高度，两处必须引用同一个值。
+   *
+   * 断点统一为 768px，但**不能**做成变量：CSS 自定义属性无法出现在 @media 条件里
+   * （`@media (max-width: var(--x))` 直接不生效），所以各组件手写这同一个值。
+   */
+  --app-nav-height: 56px;
 
   /* ---------- 映射层：Element Plus 跟随语义层 ---------- */
   --el-font-family: var(--font-family);
