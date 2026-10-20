@@ -50,6 +50,8 @@ chroma_data/
 redis_data/
 logs/
 *.log
+# Chroma 客户端首次预热时下载的 ONNX 模型缓存（含 onnx.tar.gz，禁止入库）
+.cache/
 
 # ===== IDE / 编辑器 =====
 .idea/
