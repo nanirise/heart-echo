@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -77,6 +78,7 @@ type ChatService struct {
 	msgRepo      *repository.MessageRepo
 	personaRepo  *repository.PersonaRepo
 	scheduleRepo *repository.ScheduleRepo
+	memoryRepo   *repository.MemoryRepo
 	ai           AIClient
 }
 
@@ -91,6 +93,7 @@ func NewChatService(db *gorm.DB, ai AIClient) *ChatService {
 		msgRepo:      repository.NewMessageRepo(db),
 		personaRepo:  repository.NewPersonaRepo(db),
 		scheduleRepo: repository.NewScheduleRepo(db),
+		memoryRepo:   repository.NewMemoryRepo(db),
 		ai:           ai,
 	}
 }
@@ -274,12 +277,14 @@ func (s *ChatService) StreamChat(
 	// [假设] 这一步失败按普通 JSON 错误返回（5003，HTTP 500）。spec §1.1 只把
 	// 4001 / 4010 / 4043 归为"进 SSE 之前"，没给落库失败的位置；此时流还没开，
 	// 走 JSON 是真话。见下方 §待确认。
-	if _, err := s.persistMessage(ctx, &model.ChatMessage{
+	// 保留主键：记忆的 source_message_id 要指向这条用户消息，删消息时外键会置 NULL。
+	userMessage, err := s.persistMessage(ctx, &model.ChatMessage{
 		UserID:    userID,
 		PersonaID: req.PersonaID,
 		Role:      model.RoleUser,
 		Content:   content,
-	}); err != nil {
+	})
+	if err != nil {
 		return nil, err
 	}
 
@@ -287,7 +292,7 @@ func (s *ChatService) StreamChat(
 	// channel 无缓冲：本 goroutine 往里推事件时会阻塞到调用方来读，
 	// 所以不存在"事件比响应头先到"的竞态。
 	ch := make(chan ChatEvent)
-	go s.runStream(ctx, aiReq, ch)
+	go s.runStream(ctx, aiReq, userMessage.ID, ch)
 	return ch, nil
 }
 
@@ -298,7 +303,10 @@ func (s *ChatService) StreamChat(
 //
 // 形参收组装好的 ChatRequest，而不是 (userID, personaID, content) 三件散装：
 // 落 assistant 消息要用的两个 ID 本来就在里面，不必再传一遍，也就不可能传错顺序。
-func (s *ChatService) runStream(ctx context.Context, aiReq ChatRequest, ch chan<- ChatEvent) {
+// sourceMessageID 是这轮用户消息的主键，单独传是因为 ChatRequest 只承载发给 Python 的字段。
+func (s *ChatService) runStream(
+	ctx context.Context, aiReq ChatRequest, sourceMessageID uint64, ch chan<- ChatEvent,
+) {
 	defer close(ch)
 
 	upstream, err := s.ai.StreamChat(ctx, aiReq)
@@ -371,9 +379,11 @@ func (s *ChatService) runStream(ctx context.Context, aiReq ChatRequest, ch chan<
 	// done 已经交给前端，累加放在它之后：亲密度慢一点无所谓，不能拖慢「回复完成」的感知
 	s.incrementFamiliarity(ctx, aiReq.UserID, aiReq.PersonaID)
 
-	// 日程抽取放在 done 之后异步执行（TECH_DESIGN §5.7）：
-	// 多一次 ai-service 调用，不能拖慢用户看到回复。
+	// 日程抽取与记忆提取都放在 done 之后异步执行（TECH_DESIGN §5.3 / §5.7）：
+	// 各多一次 ai-service 调用，不能拖慢用户看到回复。
 	go s.asyncExtractSchedule(context.Background(), aiReq.UserID, aiReq.PersonaID, aiReq.Message)
+	go s.asyncExtractMemory(
+		context.Background(), aiReq.UserID, aiReq.PersonaID, sourceMessageID, aiReq.Message)
 }
 
 // emitChatEvent 往 channel 推一个事件，返回 false 表示调用方已经不听了。
@@ -588,4 +598,121 @@ func (s *ChatService) asyncExtractSchedule(
 			zap.Uint64("personaID", personaID),
 			zap.Error(err))
 	}
+}
+
+// memoryImportanceThreshold 是 TECH_DESIGN §5.3 的落库阈值：低于 0.6 的候选丢弃。
+// 规则档固定 0.8，LLM 档由模型打分。
+const memoryImportanceThreshold = 0.6
+
+// asyncExtractMemory 从一轮用户消息里提取记忆与画像并落库（TECH_DESIGN §5.3）。
+//
+// 与 asyncExtractSchedule 同一约定：调用方异步执行，所有失败只记 warn ——
+// 提取是对话的附带效果，不能反过来影响主流程。
+// 记忆与画像在同一个事务里落库：一轮提取的产物要么都落、要么都不落。
+func (s *ChatService) asyncExtractMemory(
+	ctx context.Context, userID, personaID, sourceMessageID uint64, userContent string,
+) {
+	if strings.HasPrefix(strings.TrimSpace(userContent), "[nudge]") {
+		return
+	}
+
+	// LLM 提取比规则解析慢；30 秒足够一句话的结构化提取，同时避免 goroutine 长期挂住。
+	extractCtx, cancelExtract := context.WithTimeout(ctx, 30*time.Second)
+	result, err := s.ai.ExtractMemories(extractCtx, userContent)
+	cancelExtract()
+	if err != nil {
+		zap.L().Warn("memory: extract failed",
+			zap.Uint64("userID", userID),
+			zap.Uint64("personaID", personaID),
+			zap.Error(err))
+		return
+	}
+	if result == nil {
+		return
+	}
+
+	memories := make([]*model.UserMemory, 0, len(result.Memories))
+	for _, candidate := range result.Memories {
+		memoryType := model.MemoryType(strings.ToLower(strings.TrimSpace(candidate.MemoryType)))
+		// LLM 可能返回 emotion 等非法类型；必须在落库前丢弃并记日志，
+		// 不要原样写库，也不要静默改成 fact（user-memory spec §3.3 约定 4）。
+		if !isValidMemoryType(memoryType) {
+			zap.L().Warn("memory: drop invalid memory type",
+				zap.Uint64("userID", userID),
+				zap.Uint64("personaID", personaID),
+				zap.String("memoryType", candidate.MemoryType))
+			continue
+		}
+
+		content := strings.TrimSpace(candidate.Content)
+		if content == "" || candidate.ImportanceScore < memoryImportanceThreshold {
+			continue
+		}
+
+		var sourceID *uint64
+		if sourceMessageID > 0 {
+			id := sourceMessageID
+			sourceID = &id
+		}
+		memories = append(memories, &model.UserMemory{
+			UserID:          userID,
+			PersonaID:       personaID,
+			MemoryType:      memoryType,
+			Content:         content,
+			ImportanceScore: candidate.ImportanceScore,
+			SourceMessageID: sourceID,
+		})
+	}
+
+	profileUpdates := normalizeProfileUpdates(result.ProfileUpdates)
+	if len(memories) == 0 && len(profileUpdates) == 0 {
+		return
+	}
+
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := s.memoryRepo.CreateBatch(ctx, tx, memories); err != nil {
+			return err
+		}
+		if len(profileUpdates) == 0 {
+			return nil
+		}
+		if err := s.memoryRepo.UpsertPortrait(ctx, tx, userID, personaID, profileUpdates); err != nil {
+			if errors.Is(err, repository.ErrPortraitOwnershipMismatch) {
+				// 归属校验被绕过：写没发生，但这不是需要重试的故障（spec §5.4）。
+				zap.L().Warn("memory: portrait upsert skipped due to user_id mismatch",
+					zap.Uint64("userID", userID),
+					zap.Uint64("personaID", personaID))
+				return nil
+			}
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		zap.L().Warn("memory: persist failed",
+			zap.Uint64("userID", userID),
+			zap.Uint64("personaID", personaID),
+			zap.Error(err))
+	}
+}
+
+// isValidMemoryType 只认 fact / preference / event；情绪不是记忆类型（AGENTS §4.4）。
+func isValidMemoryType(memoryType model.MemoryType) bool {
+	switch memoryType {
+	case model.MemoryTypeFact, model.MemoryTypePreference, model.MemoryTypeEvent:
+		return true
+	default:
+		return false
+	}
+}
+
+// normalizeProfileUpdates 把 Python 返回的原始 JSON 收敛成可写库的 JSONB。
+// 缺失 / null / 空对象一律返回 nil：空对象会刷新 updated_at，制造假信息。
+func normalizeProfileUpdates(raw json.RawMessage) model.JSONB {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) ||
+		bytes.Equal(trimmed, []byte("{}")) {
+		return nil
+	}
+	return model.JSONB(trimmed)
 }

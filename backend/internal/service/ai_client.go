@@ -78,10 +78,27 @@ type ScheduleParseResult struct {
 	RemindAt    *time.Time
 }
 
-// AIClient 是 Go 侧调用 Python AI 服务的唯一出入口。
+// MemoryCandidate 是 POST /memory/extract 返回的一条候选记忆。
 //
-// 只放已经落地的内部端点：流式对话 + 日程解析。TECH_DESIGN §5.0 规划的
-// AnalyzeEmotion / ExtractMemories 尚未实现，不在这里预留空方法。
+// 没有 user_id / persona_id：归属字段只能由 Go 侧从本轮对话补上，
+// 绝不能采信 AI 服务的返回体（user-memory spec §3.3 约定 1）。
+type MemoryCandidate struct {
+	MemoryType      string  `json:"memory_type"`
+	Content         string  `json:"content"`
+	ImportanceScore float64 `json:"importance_score"`
+}
+
+// MemoryExtractResult 是 POST /memory/extract 的完整返回。
+//
+// ProfileUpdates 保留原始 JSON：画像键由提取链路决定，Go 侧不定义固定 struct，
+// 否则未知键会在读写往返中静默丢失（user-profile spec §3.4）。
+type MemoryExtractResult struct {
+	Memories       []MemoryCandidate
+	ProfileUpdates json.RawMessage
+}
+
+// AIClient 是 Go 侧调用 Python AI 服务的唯一出入口。
+// 只放已经落地的内部端点：流式对话、日程解析、记忆提取。
 type AIClient interface {
 	// StreamChat 发起一次流式生成。
 	//
@@ -92,6 +109,10 @@ type AIClient interface {
 	// ParseSchedule 调 Python 规则解析器，把用户原话解析成日程。
 	// 只负责一次内部 HTTP 调用，不落库、不判断归属（那些在 ChatService 里做）。
 	ParseSchedule(ctx context.Context, message string) (*ScheduleParseResult, error)
+
+	// ExtractMemories 调 Python 提取候选记忆与画像更新。
+	// 只负责一次内部 HTTP 调用，不落库、不判断归属（那些在 ChatService 里做）。
+	ExtractMemories(ctx context.Context, message string) (*MemoryExtractResult, error)
 }
 
 type aiHTTPClient struct {
@@ -243,6 +264,51 @@ func (c *aiHTTPClient) ParseSchedule(
 		result.RemindAt = &remindAt
 	}
 	return result, nil
+}
+
+// ExtractMemories 调用 ai-service 的记忆提取端点（TECH_DESIGN §5.3）。
+//
+// 规则档与 LLM 档返回同一份结构，调用方不需要知道 MEMORY_EXTRACT_BACKEND 的值。
+// 失败按 ErrAIUnavailable 返回：异步调用方只记 warn，不影响主对话流程。
+func (c *aiHTTPClient) ExtractMemories(
+	ctx context.Context, message string,
+) (*MemoryExtractResult, error) {
+	body, err := json.Marshal(map[string]string{"message": message})
+	if err != nil {
+		return nil, errcode.Wrap(errcode.ErrInternal, err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(
+		ctx, http.MethodPost, c.baseURL+"/memory/extract", bytes.NewReader(body),
+	)
+	if err != nil {
+		return nil, errcode.Wrap(errcode.ErrInternal, err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("X-Internal-Token", c.token)
+
+	resp, err := c.http.Do(httpReq)
+	if err != nil {
+		return nil, errcode.Wrap(errcode.ErrAIUnavailable, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, errcode.Wrap(
+			errcode.ErrAIUnavailable, fmt.Errorf("ai-service status %d", resp.StatusCode),
+		)
+	}
+
+	var payload struct {
+		Memories       []MemoryCandidate `json:"memories"`
+		ProfileUpdates json.RawMessage   `json:"profile_updates"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return nil, errcode.Wrap(errcode.ErrInternal, err)
+	}
+	return &MemoryExtractResult{
+		Memories:       payload.Memories,
+		ProfileUpdates: payload.ProfileUpdates,
+	}, nil
 }
 
 // splitSSEBlock 按 \n\n 切块，切出来的内容不含结尾那两个换行。
