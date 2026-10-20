@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -72,10 +73,11 @@ type NudgeResult struct {
 // 在库里是同一张表的同一类行，各写一份 INSERT 迟早会在 created_at /
 // last_message_at 上分叉。
 type ChatService struct {
-	db          *gorm.DB
-	msgRepo     *repository.MessageRepo
-	personaRepo *repository.PersonaRepo
-	ai          AIClient
+	db           *gorm.DB
+	msgRepo      *repository.MessageRepo
+	personaRepo  *repository.PersonaRepo
+	scheduleRepo *repository.ScheduleRepo
+	ai           AIClient
 }
 
 // NewChatService 构造 ChatService。
@@ -85,10 +87,11 @@ type ChatService struct {
 // 不用真起 Python 服务就能跑整条链路。
 func NewChatService(db *gorm.DB, ai AIClient) *ChatService {
 	return &ChatService{
-		db:          db,
-		msgRepo:     repository.NewMessageRepo(db),
-		personaRepo: repository.NewPersonaRepo(db),
-		ai:          ai,
+		db:           db,
+		msgRepo:      repository.NewMessageRepo(db),
+		personaRepo:  repository.NewPersonaRepo(db),
+		scheduleRepo: repository.NewScheduleRepo(db),
+		ai:           ai,
 	}
 }
 
@@ -367,6 +370,10 @@ func (s *ChatService) runStream(ctx context.Context, aiReq ChatRequest, ch chan<
 
 	// done 已经交给前端，累加放在它之后：亲密度慢一点无所谓，不能拖慢「回复完成」的感知
 	s.incrementFamiliarity(ctx, aiReq.UserID, aiReq.PersonaID)
+
+	// 日程抽取放在 done 之后异步执行（TECH_DESIGN §5.7）：
+	// 多一次 ai-service 调用，不能拖慢用户看到回复。
+	go s.asyncExtractSchedule(context.Background(), aiReq.UserID, aiReq.PersonaID, aiReq.Message)
 }
 
 // emitChatEvent 往 channel 推一个事件，返回 false 表示调用方已经不听了。
@@ -496,9 +503,89 @@ func (s *ChatService) InjectNudge(ctx context.Context, in NudgeInput) (*NudgeRes
 	// 与 runStream 同一时机：assistant 已落库，再累加亲密度
 	s.incrementFamiliarity(ctx, in.UserID, in.PersonaID)
 
+	// [nudge] 开头的注入内容会在 asyncExtractSchedule 里跳过，
+	// 这里仍调用是为了覆盖将来可能出现的非 [nudge] 注入。
+	go s.asyncExtractSchedule(context.Background(), in.UserID, in.PersonaID, in.Content)
+
 	return &NudgeResult{
 		MessageID: assistant.ID,
 		Content:   assistant.Content,
 		CreatedAt: assistant.CreatedAt,
 	}, nil
+}
+
+// asyncExtractSchedule 从一轮用户消息里抽取日程并落库（TECH_DESIGN §5.7）。
+//
+// 调用方必须异步执行：解析是一次额外的 ai-service 调用，放进生成链路会直接
+// 拖慢用户看到回复的时间。本函数把所有失败都吞成日志——它属于对话的附带效果，
+// 不能反过来影响主流程。
+//
+// 以 [nudge] 开头的输入直接跳过：主动消息、日程提醒以及本函数自己注入的
+// 澄清请求都是这种形态，再抽取会生成新的澄清消息，形成递归。
+func (s *ChatService) asyncExtractSchedule(
+	ctx context.Context, userID, personaID uint64, userContent string,
+) {
+	if strings.HasPrefix(strings.TrimSpace(userContent), "[nudge]") {
+		return
+	}
+
+	// 5 秒只覆盖解析调用：规则匹配远低于这个上限。
+	parseCtx, cancelParse := context.WithTimeout(ctx, 5*time.Second)
+	result, err := s.ai.ParseSchedule(parseCtx, userContent)
+	cancelParse()
+	if err != nil {
+		zap.L().Warn("schedule: parse failed",
+			zap.Uint64("userID", userID),
+			zap.Uint64("personaID", personaID),
+			zap.Error(err))
+		return
+	}
+	if result == nil || !result.HasIntent {
+		return
+	}
+
+	if result.NeedClarify {
+		// 解析不出时必须回问，不能静默丢弃（契约 §10 未实现兜底行为）。
+		// 澄清回复是一次完整 LLM 生成，5 秒解析预算会把它掐在半路；
+		// 单独给 60 秒，仍与主对话链路隔离。
+		clarifyCtx, cancelClarify := context.WithTimeout(ctx, 60*time.Second)
+		defer cancelClarify()
+		// 注入体以 [nudge] 开头，既让聊天链路识别系统注入，也避免再次进入本函数。
+		_, err := s.InjectNudge(clarifyCtx, NudgeInput{
+			UserID:    userID,
+			PersonaID: personaID,
+			Content: fmt.Sprintf(
+				"[nudge] 用户说了'%s'，系统没听清具体时间。请你向用户确认一下具体是几点。",
+				userContent,
+			),
+		})
+		if err != nil {
+			zap.L().Warn("schedule: clarify nudge failed",
+				zap.Uint64("userID", userID),
+				zap.Uint64("personaID", personaID),
+				zap.Error(err))
+		}
+		return
+	}
+
+	if result.Content == "" || result.RemindAt == nil {
+		zap.L().Warn("schedule: parse result incomplete",
+			zap.Uint64("userID", userID),
+			zap.Uint64("personaID", personaID))
+		return
+	}
+
+	schedule := &model.Schedule{
+		UserID:    userID,
+		PersonaID: personaID,
+		Content:   result.Content,
+		RemindAt:  *result.RemindAt,
+		Status:    model.ScheduleStatusPending,
+	}
+	if err := s.scheduleRepo.Create(ctx, s.db, schedule); err != nil {
+		zap.L().Warn("schedule: create failed",
+			zap.Uint64("userID", userID),
+			zap.Uint64("personaID", personaID),
+			zap.Error(err))
+	}
 }

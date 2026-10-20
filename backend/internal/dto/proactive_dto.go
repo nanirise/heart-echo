@@ -48,6 +48,9 @@ type TriggerRequest struct {
 // TriggerResponse 是 POST /proactive/trigger 的响应 data（契约 §9）：
 // 生成出来的 assistant 回复，**不是**被注入的那行 [nudge]。
 //
+// 日程的 POST /schedules/:id/trigger 复用本结构（契约 §10 的字段与 §9 逐字相同）；
+// 但日程触发失败会直接返回错误码，不会退化成下面的零值成功形态。
+//
 // 判定未通过时返回零值（messageId=0 / content="" / createdAt=null）：契约只给了成功形态，
 // 没有"被拦下"的表达，复用零值形态是群内对齐的口径（spec §4 的未定义行为按此落地），
 // 前端按 messageId === 0 区分。

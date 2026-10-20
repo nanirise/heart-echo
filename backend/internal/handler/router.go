@@ -63,6 +63,10 @@ func NewRouter(cfg *config.Config, logger *zap.Logger, db *gorm.DB) *gin.Engine 
 	proactiveService := service.NewProactiveService(db, chatService)
 	RegisterProactiveRoutes(protected, NewProactiveHandler(proactiveService))
 
+	// 日程提醒（契约 §10，P1）
+	scheduleService := service.NewScheduleService(db, chatService)
+	RegisterScheduleRoutes(protected, NewScheduleHandler(scheduleService))
+
 	// 朋友圈（契约 §8）。动态由 main.go 的定时任务产生，这里只有读、点赞、评论四个端点。
 	momentService := service.NewMomentService(db)
 	RegisterMomentRoutes(protected, NewMomentHandler(momentService))

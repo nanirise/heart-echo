@@ -1551,8 +1551,13 @@ POST /api/v1/proactive/trigger     # 请求体：{ "personaId": 1 }
 **流程**：
 
 1. 对话结束后，在**异步步骤**（与记忆提取同一步，见 §5.1 时序图 ⑤）从这轮用户消息里抽取日程意图：有没有**显式提醒意图**、事件描述、时间表达
-2. 时间表达交给**规则解析器**转成绝对时间（见下）；解析不出则返回 `need_clarify`
-3. **落库由 Go 侧完成，AI 服务不碰数据库**：Python 只返回 `{content, remind_at}` 或 `{need_clarify: true}`，Go 侧调成员 3 的 `schedule_repo` 写 `schedules` 行（`status = 'pending'`）。解析失败 → 把"需要澄清"的信号带回对话，由 AI 在**下一次回复里回问用户**，不要静默丢弃
+2. 时间表达交给**规则解析器**转成绝对时间（见下）；有提醒意图但解析不出时间或事件 → 返回 `need_clarify: true`
+3. **落库由 Go 侧完成，AI 服务不碰数据库**。Python 的返回分三个互斥出口：
+   - `{has_intent: false}`：陈述句，没有显式提醒意图 → 不建日程，也不回问
+   - `{has_intent: true, need_clarify: true}`：有提醒意图但时间/事件解析不出 → 由 AI 在**下一次回复里回问用户**，不要静默丢弃
+   - `{has_intent: true, need_clarify: false, content, remind_at}`：解析成功 → Go 侧调成员 3 的 `schedule_repo` 写 `schedules` 行（`status = 'pending'`）
+
+   `has_intent` 必须显式下发：Go 侧不能把"缺省字段"与"明确没有意图"混为一谈，否则陈述句也会被当成需要澄清的委托。
 4. 定时任务（生产 5 分钟一次，`PROACTIVE_JOB_INTERVAL` 复用）扫描 `status = 'pending' AND remind_at <= NOW()`
 5. 到点的行复用 `TriggerNow` 的同款逻辑：注入 `[nudge]` 消息 → 走正常聊天链路 → 生成提醒语 → `status = 'sent'`
 6. 侧栏红点逻辑与主动消息完全共用
