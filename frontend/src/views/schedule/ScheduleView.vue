@@ -10,6 +10,7 @@ import {
   cancelSchedule,
   isScheduleNotFound,
   listSchedules,
+  triggerSchedule,
 } from '@/api/schedule'
 import type { Persona } from '@/types/persona'
 import type { ScheduleItem, ScheduleStatus } from '@/types/schedule'
@@ -29,6 +30,14 @@ const errorMessage = ref('')
 
 /** 取消请求在飞的日程 id：防止连点重复发 DELETE（后端幂等，但按钮应即时禁用） */
 const cancellingIds = reactive(new Set<number>())
+
+/**
+ * 触发请求在飞的日程 id。
+ *
+ * 触发不是幂等操作：服务端先注入提醒消息、成功后把状态置 sent，是 at-least-once
+ * 语义。连点两次会在对话里真的产生两轮提醒，所以这里必须挡在请求前。
+ */
+const triggeringIds = reactive(new Set<number>())
 
 const hasMore = computed(() => schedules.value.length < total.value)
 
@@ -114,7 +123,8 @@ async function loadMore(): Promise<void> {
 }
 
 async function handleCancel(item: ScheduleItem): Promise<void> {
-  if (cancellingIds.has(item.id)) return
+  // 触发在飞时不允许取消：提醒可能已经注入，取消只会让界面与后端不一致
+  if (cancellingIds.has(item.id) || triggeringIds.has(item.id)) return
 
   try {
     await ElMessageBox.confirm(`取消后不会再收到「${item.content}」的提醒。`, '取消这条日程', {
@@ -141,6 +151,32 @@ async function handleCancel(item: ScheduleItem): Promise<void> {
     }
   } finally {
     cancellingIds.delete(item.id)
+  }
+}
+
+/**
+ * 立即提醒：手动触发一次这条日程（答辩演示与提前提醒用）。
+ *
+ * 触发成功后服务端会把 status 置为 sent，但响应体里只有新生成的消息、
+ * 没有这条日程本身，所以状态只能在本地同步 —— 顺带让按钮消失、tag 变「已提醒」。
+ */
+async function handleTrigger(item: ScheduleItem): Promise<void> {
+  // 取消在飞时不允许触发：取消写的是 cancelled，触发读的是 pending，两条请求赛跑会打架
+  if (triggeringIds.has(item.id) || cancellingIds.has(item.id)) return
+
+  triggeringIds.add(item.id)
+  try {
+    await triggerSchedule(item.id)
+    item.status = 'sent'
+    ElMessage.success('已触发提醒，去对话页看看 TA 的回应')
+  } catch (error) {
+    ElMessage.error(toErrorMessage(error, '触发失败，请稍后重试'))
+    // 4040：已取消 / 已被定时任务提醒过 / 不属于当前账号 —— 界面数据已过期
+    if (isScheduleNotFound(error) && selectedPersonaId.value !== null) {
+      await loadSchedules(selectedPersonaId.value)
+    }
+  } finally {
+    triggeringIds.delete(item.id)
   }
 }
 
@@ -214,16 +250,30 @@ onMounted(() => {
 
             <div class="schedule-actions">
               <span class="schedule-created">创建于 {{ formatDateTime(item.createdAt) }}</span>
-              <el-button
-                v-if="item.status === 'pending'"
-                size="small"
-                text
-                type="danger"
-                :loading="cancellingIds.has(item.id)"
-                @click="handleCancel(item)"
-              >
-                取消
-              </el-button>
+
+              <!-- 只有 pending 能触发：cancelled / sent 调 trigger 后端一律 4040 -->
+              <div v-if="item.status === 'pending'" class="schedule-buttons">
+                <el-button
+                  size="small"
+                  type="primary"
+                  plain
+                  :loading="triggeringIds.has(item.id)"
+                  :disabled="cancellingIds.has(item.id)"
+                  @click="handleTrigger(item)"
+                >
+                  立即提醒
+                </el-button>
+                <el-button
+                  size="small"
+                  text
+                  type="danger"
+                  :loading="cancellingIds.has(item.id)"
+                  :disabled="triggeringIds.has(item.id)"
+                  @click="handleCancel(item)"
+                >
+                  取消
+                </el-button>
+              </div>
             </div>
           </el-card>
         </li>
@@ -313,11 +363,18 @@ onMounted(() => {
 
 .schedule-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--spacing-unit);
   align-items: center;
   justify-content: space-between;
   padding-top: var(--spacing-unit);
   border-top: 1px solid var(--el-border-color-lighter);
+}
+
+.schedule-buttons {
+  display: flex;
+  gap: var(--spacing-unit);
+  align-items: center;
 }
 
 .schedule-created {

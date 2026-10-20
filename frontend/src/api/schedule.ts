@@ -1,7 +1,7 @@
 import { ApiError, request } from '@/api/request'
 import { ErrorCode } from '@/types/errcode'
 import type { PageResult } from '@/types/api'
-import type { ScheduleItem } from '@/types/schedule'
+import type { ScheduleItem, ScheduleTriggerResult } from '@/types/schedule'
 
 /**
  * 每页条数。契约默认 20、上限 100，显式传而不是靠后端默认值 ——
@@ -36,4 +36,19 @@ export function cancelSchedule(id: number): Promise<null> {
 /** 4040：这条日程已不存在或不属于当前账号，界面数据已过期，需要重拉 */
 export function isScheduleNotFound(error: unknown): boolean {
   return error instanceof ApiError && error.code === ErrorCode.ErrNotFound
+}
+
+/**
+ * 立即触发一条日程的提醒（演示与提前提醒用）。
+ *
+ * 无请求体：`personaId` 由服务端从这条日程行上取，前端不传也不该传。
+ *
+ * **只有 `pending` 的行能触发** —— 服务端对 `cancelled`（软删除）和 `sent`
+ * （已经提醒过）一律返回 4040，所以按钮只在待提醒的卡片上出现，不能做成通用按钮。
+ *
+ * 成功返回的是刚生成的助手回复；提醒本身是注入到对话里的一条消息，
+ * 调用方应引导用户去对话页查看。
+ */
+export function triggerSchedule(id: number): Promise<ScheduleTriggerResult> {
+  return request.post<ScheduleTriggerResult>(`/schedules/${id}/trigger`)
 }
