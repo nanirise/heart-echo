@@ -85,7 +85,7 @@
  * `.el-card` 的默认值（圆角 4px、内边距 20px）覆盖 —— 写了等于没写。
  * 必须在 `.el-card` 上再声明一次。
  *
- * `--el-card-padding` 只在窄屏收紧，写在文件末尾的 @media 里。
+ * `--el-card-padding` 的窄屏收紧由 @media 单独声明。
  */
 .el-card {
   --el-card-border-radius: var(--app-radius-card);
