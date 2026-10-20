@@ -1387,6 +1387,11 @@ type AIClient interface {
   → 阶段二：额外写入 ChromaDB，召回升级为向量相似度检索
 ```
 
+> **阶段二落地状态（2026-10-20 更新）：已实现。**
+> - **提取**：`MEMORY_EXTRACT_BACKEND=llm` 已可用，`ai-service/app/agents/memory_agent.py` 的 LLM 结构化提取同时产出 `memories` 与 `profile_updates`（**画像链路一并补齐**）。
+> - **检索**：`MEMORY_BACKEND=vector` 已可用，`ai-service/app/memory/vector.py` 接入 ChromaDB（`chromadb/chroma:0.6.3`），**使用 Chroma 默认的 ONNX MiniLM（all-MiniLM-L6-v2）做向量化**，不引入 `sentence-transformers`。
+> - 阶段一实现（规则提取 / PG 关键词）**保留**，两档靠环境变量切换，见 §5.0。
+
 **阶段一记忆提取：规则实现**（约 100 行，零 LLM 成本）
 
 ```python
@@ -1432,12 +1437,16 @@ class RuleMemoryExtractor:
 | 召回 | **该人设**最近 50 条 → 关键词重合度排序 → Top-5 | 向量相似度检索 Top-5（按 `persona_id` + `user_id` 过滤） |
 | 注入 | 拼进 system prompt 的"关于你正在陪伴的用户"段落 | 同左 |
 
+> **2026-10-20 状态更新**：右列已实现。`MEMORY_EXTRACT_BACKEND` 与 `MEMORY_BACKEND` 两个开关均已可用，默认值仍是阶段一（`rule` / `recent`）——**阶段一是可回退的兜底档，不是被替换掉的旧代码**（AGENTS §4.7：每替换一项，当天收工前必须保证服务可运行、可演示）。
+
 **阶段二：双轨设计**
 
 | 轨道 | 存储 | 存什么 | 检索方式 |
 |------|------|--------|----------|
 | 显式记忆 | PostgreSQL | 事实性信息："用户叫小明"、"养了一只叫豆豆的猫" | 精确 / 关键词 |
 | 隐式记忆 | ChromaDB | 语义记忆："用户最近工作压力大" | Embedding 向量相似度 |
+
+> **落地形态**：两轨**同源双写**——PG 是唯一事实来源，ChromaDB 是可重建的索引。`POST /memory/store` 的 `id` 即 PG 主键，同时用作 Chroma 文档 ID；检索时**必须同时带 `user_id` + `persona_id` 两个过滤条件**（见 [API_CONTRACT §7.1](API_CONTRACT.md#71-内部接口记忆提取与向量写入2026-10-20-登记)）。
 
 **⚠️ 双写一致性风险（仅在阶段二遇到）**
 
@@ -1464,6 +1473,8 @@ class RuleMemoryExtractor:
   "profile_updates": { "occupation": "程序员", "interests": ["跑步", "猫"] }
 }
 ```
+
+> **2026-10-20 状态更新：已按此契约实现。** `POST /memory/extract` 的响应即上表形状（`memories` 为空时给 `[]`，`profile_updates` 没有时给 `{}`）；`profile_updates` 由 Go 侧合入 `user_profile`，即**画像页的数据来源**。`memory_type` 仍限 `fact` / `preference` / `event` 三类，**情绪不建索引、不进向量库**（AGENTS §4.4）。
 
 ### 5.4 主动消息实现
 
@@ -2229,6 +2240,8 @@ Nginx 同时承担两件事：托管前端静态文件 + 把 /api 反向代理�
 直接 COPY 进 nginx 镜像，**避免跨容器共享文件**。
 
 （chromadb 容器在阶段二接入向量检索时启用）
+
+> **2026-10-20 状态更新：chromadb 容器已启用。** 生产 `deploy/docker-compose.yml` 使用 `chromadb/chroma:0.6.3`（与 `ai-service/requirements.txt` 同版本，客户端与服务端 API 版本必须匹配），并挂载 `chroma_cache:/root/.cache/chroma` 持久化 ONNX 模型缓存——详见 [§9.6 国内服务器离线模型搬运方案](#96-国内服务器离线模型搬运方案2026-10-20新增)。
 ```
 
 ### 9.3 docker-compose.yml
@@ -2458,6 +2471,47 @@ docker compose -f deploy/docker-compose.yml ps     # 确认全部 healthy
 - [ ] 前端 `VITE_API_BASE_URL` 在生产构建时注入为 `/api/v1`（同源，走 Nginx 转发；**不是** `localhost:8080`）
 - [ ] 安全组仅开放 22/80（本期不开 443）
 - [ ] 用手机 4G 打开 `http://<公网IP>` 走通核心演示链路
+
+### 9.6 国内服务器离线模型搬运方案（2026-10-20 新增）
+
+**背景**：阶段二启用 ChromaDB 后，chromadb 容器首次启动会尝试**自行下载 ONNX MiniLM（all-MiniLM-L6-v2）约 243MB**。国内云服务器访问 HuggingFace / ONNX 源站**极不稳定或直接失败**，表现为 chromadb 容器反复重启、日志报下载超时，`ai-service` 的记忆检索随之降级为空——**现象是"功能像没做"，实际是模型没下来**。
+
+**方案：本地打包 → scp → docker cp → volumes 持久化**
+
+```bash
+# 1) 本地先跑一次，让 chromadb 把模型下到本地缓存（本地网络能访问源站）
+docker compose -f deploy/docker-compose.dev.yml up -d chromadb
+docker compose -f deploy/docker-compose.dev.yml logs -f chromadb   # 确认模型下载完成
+
+# 2) 从本地容器里把缓存目录打包（约 243MB）
+docker cp heart_echo_chroma:/root/.cache/chroma ./chroma_cache
+tar czf chroma_cache.tar.gz chroma_cache
+
+# 3) scp 到云服务器
+scp chroma_cache.tar.gz ubuntu@<公网IP>:/opt/heart-echo/
+
+# 4) 服务器上解压后 docker cp 进容器
+ssh ubuntu@<公网IP>
+cd /opt/heart-echo && tar xzf chroma_cache.tar.gz
+docker compose -f deploy/docker-compose.yml up -d chromadb
+docker cp chroma_cache heart_echo_chroma:/root/.cache/chroma
+docker compose -f deploy/docker-compose.yml restart chromadb
+```
+
+**为什么用 volumes 持久化**：`deploy/docker-compose.yml` 已声明 `chroma_cache:/root/.cache/chroma`（另有 `chroma_data:/chroma/chroma` 存向量数据）。**容器重建时模型不必重新下载**——否则每次 `up -d --build` 都要再赌一次网络，而这正是本方案要消除的风险。
+
+**要点与坑**：
+
+| 项 | 说明 |
+|----|------|
+| 模型体积 | 约 243MB，tar 打包后 scp 传输；**不要提交进仓库**（`*.onnx` 等模型文件禁入仓库，AGENTS §7 红线 1） |
+| 目录 | 缓存落在容器内 `/root/.cache/chroma`，与向量数据 `/chroma/chroma` **是两个目录**，别只搬一个 |
+| 版本匹配 | 客户端（`ai-service/requirements.txt`）与服务端（compose 的 image tag）**必须同版本**，否则 API 版本不匹配 |
+| 端口 | 容器内是 8000；compose 只做宿主机 `127.0.0.1` 回环映射（`CHROMA_HOST_PORT`，调试用），**不对外暴露** |
+| 验证 | `docker compose logs chromadb` 不再出现下载动作 + `ai-service` 日志无降级告警，才算搬成功 |
+| 失败降级 | 模型没到位时**不应让服务起不来**：检索失败降级为无记忆，对话主链路照常（AGENTS §4.7：检索是可替换实现，不是主链路） |
+
+> **为什么不改成"构建时下载"**：把 243MB 塞进 Dockerfile 会让镜像膨胀，且国内服务器在 `docker build` 阶段照样要连源站——问题只是被搬到另一个时机。**本地搬数据进 volume** 是唯一不依赖服务器出网的路径。
 
 ---
 

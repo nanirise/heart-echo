@@ -314,6 +314,28 @@ data: {"code":5001,"message":"AI 回复生成失败，请稍后重试"}
 > `GET /emotion/trend` 为 **P2 预留端点，本期不实现**。
 > **没有 `/emotion/diary`**：情绪标签是内部信号（见 §5），"情绪日记"本质是把标签呈现给用户，与全局约定冲突，因此**连预留路径都不留**。
 
+### 7.1 内部接口：记忆提取与向量写入（2026-10-20 登记）
+
+以下是 **ai-service 侧的内部接口**（`POST /internal/*` 同族），不对前端暴露，由 Go 后端带 `X-Internal-Token` 调用。它们**不属于本文 §1–§11 的对外契约**，此处登记字段与语义，便于两端对齐。
+
+| 端点 | 请求 | 响应 data | 说明 |
+|------|------|-----------|------|
+| `POST /memory/extract` | `{ "message": "用户原话，单条" }` | `{ "memories": [ {memoryType, content, importanceScore} ], "profileUpdates": {} }` | **LLM 记忆提取与画像生成**。只返回候选，**不落库**：`user_id` / `persona_id` 由 Go 侧从本轮对话赋值 |
+| `POST /memory/store` | `{ "user_id", "persona_id", "memories": [ {id, memoryType, content, importanceScore} ] }` | `{ "stored": 1 }` | **同步写入 ChromaDB**。`id` 是已落 PostgreSQL 的主键，用作 Chroma 文档 ID；`stored: 0` 表示当前为 `recent` 档（未写向量库），**不是错误** |
+
+**字段约束**：
+
+| 字段 | 约束 |
+|------|------|
+| `message` | 必填，非空；**只收用户原话**，归属字段由 Go 侧补 |
+| `memories[]` | 三个字段，与提取侧同一组取值 |
+| `memoryType` | `fact` \| `preference` \| `event`，**与对外契约一致**（情绪不建索引、不进向量库） |
+| `user_id` / `persona_id` | 必填，正整数；用于 Chroma metadata 的**归属过滤**（两个条件都要带，见技术文档 §5.3） |
+
+> **双写语义**：`/memory/extract` 出候选 → Go 侧落 PostgreSQL → 再把落库后的记忆交给 `/memory/store` 建向量索引。**提取侧与存储侧是两步**，不是一次调用。
+> **为什么这两个接口要登记**：它们改变了「记忆怎么产生」与「记忆怎么被检索到」两条链路（`MEMORY_EXTRACT_BACKEND` / `MEMORY_BACKEND` 的默认行为），前端虽然不直接调用，但 §7 两个对外端点的**数据来源**就是它们。
+> **鉴权**：两个端点都走 `verify_internal_token`（`X-Internal-Token`），与 `POST /internal/chat/stream` 同一套校验；`GET /health` 仍不带 token。
+
 ---
 
 ## 8. AI 朋友圈（Moments）
@@ -479,8 +501,9 @@ data: {"code":5001,"message":"AI 回复生成失败，请稍后重试"}
 | 2026-09-30 | v1 | `PUT /user/profile` **改为严格解码**：请求体出现 `username` / `avatarUrl` 以外的键返回 `4001`（原为静默忽略并返回 `200`）。它是全项目唯一的「部分更新」接口，两个字段都可选、`{}` 是合法请求，所以默认的宽松解码会让「什么都没想改」和「字段名拼错了」返回完全一样的 `200 保存成功`。⚠️ 前端注意：**不要把整个 user 对象 PUT 上来**，`id` / `email` / `createdAt` 会触发 `4001` | §3.5 | 成员 1 | ⬜ |
 | 2026-10-05 | v1 | **内部接口** `POST /internal/chat/stream` 请求体新增两个**可选**字段 `persona`（人格三字段）与 `history`（最近 20 条，时间正序）。**对外契约 §5 / §6 无任何变化**：前端请求体 `{personaId, content}` 与 SSE 事件三型均未改动，前端无需调整。不传新字段时 ai-service 行为与原先完全一致。⚠️ 原实现中 ai-service 既拿不到人格也拿不到历史，模型看到的上下文只有当前这一句，**人格完全不生效且每轮失忆**；根因是 LLM 接口无状态、上下文必须由调用方每次带入 | `/internal/chat/stream`（不在本契约 §1-11 内，定义见 [chat-stream spec §2.2](specs/chat-stream/spec.md)） | 成员 1 | ⬜ |
 | 2026-10-06 | v1 | intervalMin / intervalMax 下限 5 → 1，演示场景需 1 分钟触发 | §9 | 成员3 | ⬜ |
-| 2026-10-20 | v1 | **全量状态同步（仅状态列，无字段变更）**：§3–§11 除 §7 两条外的全部端点状态 `⬜` → `✅`，对应代码已在 `internal/handler/router.go` 内注册并经核对。本轮登记的实际落地内容：① **朋友圈四个端点**（`GET /moments`、`POST /moments/:id/like`、`GET/POST /moments/:id/comments`）已上线，动态由 `MomentJob` 定时生成，无手动触发接口；② **日程三个端点**（`GET /schedules`、`DELETE /schedules/:id`、`POST /schedules/:id/trigger`）已上线，`ScheduleJob` 与 `ProactiveJob` 共用 `PROACTIVE_JOB_INTERVAL` 扫描；③ **主动消息三个端点**已上线，`/proactive/trigger` 与 `ProactiveJob` 同源复用 `TriggerNow`；④ **亲密度通过 `Persona.state` 返回**：`familiarity` 由 `state.familiarity` 拍平输出，回复成功后 `IncrementFamiliarity` 原子加一、封顶 100，并按区间映射为关系阶段注入 prompt；⑤ 人设四个端点、对话两个端点、SSE 均已上线。**§7 的 `GET /memory` 与 `GET /profile/portrait` 仍为 `⬜`**——后端无 handler、无路由注册，缺口已就地登记在该节，未随本轮改为 ✅ | §3 §4 §5 §6 §8 §9 §10 §11 | 文档同步 | ⬜ |
-| 2026-10-20 | v1 | 补全 /memory 与 /profile/portrait 契约：加入 4001 错误码，明确空画像返回 {} | §7 | 成员3 | ⬜ |
+| 2026-10-20 | v1 | **P2 升级：接入 LLM 记忆提取与 ChromaDB 向量检索，补齐画像生成链路。** 新增 ai-service 两个内部接口（§7.1）：`POST /memory/extract`（LLM 提取记忆与画像候选，只返回不落库，归属由 Go 侧赋值）与 `POST /memory/store`（Go 落库后同步写 ChromaDB，`id` = PG 主键作文档 ID，`stored: 0` 表示 recent 档非错误）。**对外契约无变化**：前端不直接调用这两个接口，§7 的 `GET /memory` 与 `GET /profile/portrait` 字段未动，但其数据来源从「规则提取 + PG 关键词」升级为「LLM 提取 + 向量语义检索」 | §7.1（新增） | 文档同步 | ✅ |
+| 2026-10-20 | v1 | **全量状态同步（仅状态列，无字段变更）**：§3–§11 除 §7 两条外的全部端点状态 `⬜` → `✅`，对应代码已在 `internal/handler/router.go` 内注册并经核对。本轮登记的实际落地内容：① **朋友圈四个端点**（`GET /moments`、`POST /moments/:id/like`、`GET/POST /moments/:id/comments`）已上线，动态由 `MomentJob` 定时生成，无手动触发接口；② **日程三个端点**（`GET /schedules`、`DELETE /schedules/:id`、`POST /schedules/:id/trigger`）已上线，`ScheduleJob` 与 `ProactiveJob` 共用 `PROACTIVE_JOB_INTERVAL` 扫描；③ **主动消息三个端点**已上线，`/proactive/trigger` 与 `ProactiveJob` 同源复用 `TriggerNow`；④ **亲密度通过 `Persona.state` 返回**：`familiarity` 由 `state.familiarity` 拍平输出，回复成功后 `IncrementFamiliarity` 原子加一、封顶 100，并按区间映射为关系阶段注入 prompt；⑤ 人设四个端点、对话两个端点、SSE 均已上线。**§7 的 `GET /memory` 与 `GET /profile/portrait` 仍为 `⬜`**——后端无 handler、无路由注册，缺口已就地登记在该节，未随本轮改为 ✅ | §3 §4 §5 §6 §8 §9 §10 §11 | 文档同步 | ✅ |
+| 2026-10-20 | v1 | 补全 /memory 与 /profile/portrait 契约：加入 4001 错误码，明确空画像返回 {} | §7 | 成员3 | ✅ |
 | 待填 | v1 | 初始冻结 | 全部 | — | — |
 
 ---
