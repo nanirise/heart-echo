@@ -15,13 +15,20 @@ services:
       retries: 5
     networks: [heart_echo_net]
 
-  # ===== 阶段二：接入向量检索时启用 =====
-  # chromadb:
-  #   image: chromadb/chroma:latest
-  #   restart: always
-  #   volumes:
-  #     - chroma_data:/chroma/chroma
-  #   networks: [heart_echo_net]
+  chromadb:
+    # 与 ai-service/requirements.txt 的 chromadb 同版本：客户端与服务端 API 版本必须匹配。
+    image: chromadb/chroma:0.6.3
+    restart: always
+    environment:
+      ANONYMIZED_TELEMETRY: "FALSE"
+    volumes:
+      - chroma_data:/chroma/chroma
+      - chroma_cache:/root/.cache/chroma    # 缓存模型，避免容器重建重新下载
+    ports:
+      # 只绑回环：宿主机调试用（8001 避开 ai-service 的 8000）。
+      # 生产对外仍只有 Nginx 80，Chroma 不对公网开放（AGENTS §4.10）。
+      - "127.0.0.1:${CHROMA_HOST_PORT:-8001}:8000"
+    networks: [heart_echo_net]
 
   # ===== 明确不做：Redis =====
   # 本项目 QPS 极低，没有缓存需求。加它只会多一个要运维的容器。
@@ -30,6 +37,12 @@ services:
     build: ../ai-service
     restart: always
     env_file: .env
+    environment:
+      # 容器内只能走服务名与内部端口；.env 里若写成 localhost:8001 是给宿主机调试用的。
+      CHROMA_HOST: chromadb
+      CHROMA_PORT: "8000"
+    depends_on:
+      - chromadb
     # python:3.11-slim 没有 wget，用 python 自带的 urllib 探活
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')\" || exit 1"]
@@ -84,7 +97,8 @@ services:
 
 volumes:
   pg_data:
-  # chroma_data:   # 阶段二接入 ChromaDB 时启用
+  chroma_data:
+  chroma_cache:
 
 networks:
   heart_echo_net:

@@ -39,13 +39,14 @@ class HistoryTurnLike(Protocol):
     content: str
 
 
-def build_system_prompt(persona: PersonaLike) -> str:
+def build_system_prompt(
+    persona: PersonaLike,
+    memories: Sequence[str] = (),
+) -> str:
     """按 TECH_DESIGN §5.2 的模板拼 system prompt。
 
-    只实现当前拿得到的要求。§5.2 的框架里还有"当前人格状态 / 长期记忆 / 用户情绪"三段与
-    一条情绪应对要求 —— 它们分别依赖人格演化、记忆系统、情感分析，三者都还没做
-    （AnalyzeEmotion 与记忆提取仍是待做）。这里**不写占位符**：写了，后续接入时就看不出
-    哪段是真数据；不写，缺什么一目了然。
+    memories 是向量检索召回的 Top-K 长期记忆（MEMORY_BACKEND=vector 时非空）。
+    没有记忆就整段不写，不留下空标题 —— 空段落会让模型以为"这个人没有过去"。
 
     ⚠️ 第 2 条（[nudge]）不能省：主动消息注入的 "[nudge] ..." 在历史里与用户手打的字长得
     一模一样，没有这句说明，模型会当成用户真的这么打字，回复里跟着出现 "[nudge]"
@@ -56,6 +57,12 @@ def build_system_prompt(persona: PersonaLike) -> str:
         lines.append(f"性格：{persona.personality_desc}")
     if persona.speaking_style:
         lines.append(f"说话风格：{persona.speaking_style}")
+
+    if memories:
+        lines.append("")
+        lines.append("关于你正在陪伴的用户（长期记忆）：")
+        lines.extend(f"- {memory}" for memory in memories)
+        lines.append("只在相关时自然提起，不要逐条复述，也不要暴露你在检索记忆。")
 
     lines.append("")
     lines.append("要求：")
@@ -71,8 +78,9 @@ def build_messages(
     message: str,
     persona: PersonaLike | None,
     history: Sequence[HistoryTurnLike],
+    memories: Sequence[str] = (),
 ) -> list[dict[str, str]]:
-    """把人格、历史、当前消息拼成 messages 数组 —— 这就是模型的**全部记忆**。
+    """把人格、长期记忆、历史、当前消息拼成 messages 数组 —— 这就是模型的**全部记忆**。
 
     LLM 接口是无状态的，服务端不存会话：模型每一轮能看到什么，完全由这个数组决定。
     少拼一段，模型就"不知道"那一段，而且不会报错，只会答得不对。
@@ -82,7 +90,9 @@ def build_messages(
     """
     messages: list[dict[str, str]] = []
     if persona is not None:
-        messages.append({"role": "system", "content": build_system_prompt(persona)})
+        messages.append(
+            {"role": "system", "content": build_system_prompt(persona, memories)}
+        )
     for turn in history:
         messages.append({"role": turn.role, "content": turn.content})
     messages.append({"role": "user", "content": message})
@@ -142,6 +152,7 @@ async def stream_reply(
     message: str,
     persona: PersonaLike | None = None,
     history: Sequence[HistoryTurnLike] = (),
+    memories: Sequence[str] = (),
 ) -> AsyncIterator[str]:
     """逐段产出回复文本，每段几个字。
 
@@ -159,7 +170,7 @@ async def stream_reply(
             # ⚠️ 这里**不能再硬编一段 system prompt**：它会把 persona 那一份盖掉，
             # 于是用户在界面上填的说话风格完全不生效，而现象只是"说话不太像"，
             # 没有任何报错 —— 2026-10-05 就是这么踩的（当时写死了"温柔陪伴、不超过三句"）。
-            messages=build_messages(message, persona, history),
+            messages=build_messages(message, persona, history, memories),
             stream=True,
             max_tokens=settings.llm_max_tokens,
         )

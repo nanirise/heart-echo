@@ -30,6 +30,18 @@ class Settings(BaseSettings):
     # 用 Literal 而不是 str：拼错时服务启动即失败，不会静默退回规则档。
     memory_extract_backend: Literal["rule", "llm"] = "rule"
 
+    # 记忆召回（TECH_DESIGN §5.3 阶段二）：recent 保持既有行为，vector 走 ChromaDB。
+    # 默认 recent 是升级纪律要求的回退档；演示时改 vector（AGENTS §4.7）。
+    memory_backend: Literal["recent", "vector"] = "recent"
+    memory_top_k: int = 5
+
+    # ChromaDB 连接。本地 uvicorn 连宿主机映射端口（默认 8001）；
+    # compose 内的 ai-service 连服务名 chromadb 的内部端口 8000（deploy/.env 覆盖）。
+    chroma_host: str = "localhost"
+    chroma_port: int = 8001
+    # 与 TECH_DESIGN §6 的集合设计一致：id = user_memory.id。
+    chroma_collection: str = "persona_memories"
+
 
 @lru_cache
 def get_settings() -> Settings:

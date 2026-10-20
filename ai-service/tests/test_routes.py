@@ -44,6 +44,8 @@ def client(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     # deepseek_api_key 没有默认值，缺了 Settings() 直接抛 —— 真实服务靠这条在启动时报错，
     # 测试里补一个假值把这一层让过去。
     monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+    # 本机 .env 可能是 vector 档；启动预热不能连真实 Chroma。
+    monkeypatch.setenv("MEMORY_BACKEND", "recent")
     monkeypatch.setattr("app.api.routes.stream_reply", fake_reply)
     # get_settings 是 lru_cache 单例，不 clear 会沿用上一次测试的配置
     get_settings.cache_clear()

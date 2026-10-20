@@ -11,3 +11,19 @@ services:
       - "5432:5432"
     volumes:
       - ../pg_data:/var/lib/postgresql/data
+
+  # 本地 uvicorn 用 localhost:8001 连它（容器内仍是 8000）。
+  # MEMORY_BACKEND=vector 时才需要；recent 档可以不起。
+  chromadb:
+    image: chromadb/chroma:0.6.3
+    container_name: heart_echo_chroma
+    restart: always
+    environment:
+      ANONYMIZED_TELEMETRY: "FALSE"
+    ports:
+      - "127.0.0.1:8001:8000"
+    volumes:
+      - chroma_dev_data:/chroma/chroma
+
+volumes:
+  chroma_dev_data:

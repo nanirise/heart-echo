@@ -157,6 +157,81 @@ func TestExtractMemories(t *testing.T) {
 	}
 }
 
+// TestStoreMemories 钉住 Go → Python 的向量写入契约：snake_case、归属 ID 在顶层，
+// 记忆 ID 必须是 PG 主键（Python 拿它当 Chroma 文档 ID 做幂等 upsert）。
+func TestStoreMemories(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/memory/store" {
+			t.Errorf("请求应为 POST /memory/store，实际 %s %s", r.Method, r.URL.Path)
+		}
+		if got := r.Header.Get("X-Internal-Token"); got != "test-token" {
+			t.Errorf("X-Internal-Token 应为 test-token，实际 %q", got)
+		}
+
+		var body struct {
+			UserID    uint64            `json:"user_id"`
+			PersonaID uint64            `json:"persona_id"`
+			Memories  []MemoryStoreItem `json:"memories"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("请求体解析失败: %v", err)
+		}
+		if body.UserID != 7 || body.PersonaID != 3 {
+			t.Errorf("归属字段应为 user_id=7 persona_id=3，实际 %+v", body)
+		}
+		if len(body.Memories) != 1 {
+			t.Fatalf("应发送 1 条记忆，实际 %d", len(body.Memories))
+		}
+		memory := body.Memories[0]
+		if memory.ID != 101 || memory.MemoryType != "fact" ||
+			memory.Content != "用户养了一只叫豆豆的猫" || memory.ImportanceScore != 0.85 {
+			t.Errorf("记忆字段错误: %+v", memory)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"stored":1}`))
+	}))
+	defer server.Close()
+
+	client := &aiHTTPClient{baseURL: server.URL, token: "test-token", http: server.Client()}
+	stored, err := client.StoreMemories(context.Background(), 7, 3, []MemoryStoreItem{
+		{
+			ID:              101,
+			MemoryType:      "fact",
+			Content:         "用户养了一只叫豆豆的猫",
+			ImportanceScore: 0.85,
+		},
+	})
+	if err != nil {
+		t.Fatalf("StoreMemories 不应失败: %v", err)
+	}
+	if stored != 1 {
+		t.Errorf("stored 应为 1，实际 %d", stored)
+	}
+}
+
+// TestStoreMemoriesUnavailable 锁定非 200 的归类：调用方只记 warn，
+// 但错误码仍应是 5002（AI 服务不可用），不能混成 5000。
+func TestStoreMemoriesUnavailable(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	client := &aiHTTPClient{baseURL: server.URL, token: "test-token", http: server.Client()}
+
+	_, err := client.StoreMemories(context.Background(), 7, 3, []MemoryStoreItem{
+		{ID: 101, MemoryType: "fact", Content: "用户养了一只猫", ImportanceScore: 0.85},
+	})
+	if err == nil {
+		t.Fatal("非 200 应返回错误")
+	}
+	var bizErr *errcode.BizError
+	if !errors.As(err, &bizErr) || bizErr.Code != errcode.ErrAIUnavailable {
+		t.Fatalf("错误码应为 %d，实际 %v", errcode.ErrAIUnavailable, err)
+	}
+}
+
 // TestParseScheduleUnavailable 锁定非 200 的归类：调用方虽然只记日志，
 // 但错误码不能退化成 5000，否则日志里分不清「AI 服务挂了」与「解析结果有问题」。
 func TestParseScheduleUnavailable(t *testing.T) {

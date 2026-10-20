@@ -693,6 +693,66 @@ func (s *ChatService) asyncExtractMemory(
 			zap.Uint64("userID", userID),
 			zap.Uint64("personaID", personaID),
 			zap.Error(err))
+		return
+	}
+
+	// PostgreSQL 已提交，再同步向量库（TECH_DESIGN §5.3 双写）。
+	// 顺序不能反：先写 Chroma 再写 PG 的话，PG 失败会留下一条查不到来源的向量。
+	// 只在有记忆时调用；画像更新没有对应的向量文档。
+	if len(memories) == 0 {
+		return
+	}
+
+	items := make([]MemoryStoreItem, 0, len(memories))
+	for _, memory := range memories {
+		items = append(items, MemoryStoreItem{
+			ID:              memory.ID,
+			MemoryType:      string(memory.MemoryType),
+			Content:         memory.Content,
+			ImportanceScore: memory.ImportanceScore,
+		})
+	}
+
+	// 向量化失败不回滚 PG：PG 是唯一事实来源，索引可以重建。
+	// 单独给 10 秒，避免 Chroma 挂掉时 goroutine 拖到 30 秒提取超时之后。
+	storeCtx, cancelStore := context.WithTimeout(ctx, 10*time.Second)
+	defer cancelStore()
+	stored, err := s.ai.StoreMemories(storeCtx, userID, personaID, items)
+	if err != nil {
+		zap.L().Warn("memory: vector store failed",
+			zap.Uint64("userID", userID),
+			zap.Uint64("personaID", personaID),
+			zap.Int("count", len(items)),
+			zap.Error(err))
+		// 保持 pending：补偿任务靠它重试（TECH_DESIGN §5.3 双写第 3 条）。
+		return
+	}
+	// stored=0 是 recent 档：没有向量库可写，保持 pending 等切到 vector 后再补。
+	// 这不是异常，不打 warn，否则默认配置下每轮对话都会刷一条。
+	if stored == 0 {
+		return
+	}
+	if stored != len(items) {
+		zap.L().Warn("memory: vector store incomplete",
+			zap.Uint64("userID", userID),
+			zap.Uint64("personaID", personaID),
+			zap.Int("expected", len(items)),
+			zap.Int("stored", stored))
+		return
+	}
+
+	// 索引状态只是双写的收尾，单独 5 秒；失败不影响已提交的记忆与已写入的向量。
+	ids := make([]uint64, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.ID)
+	}
+	statusCtx, cancelStatus := context.WithTimeout(ctx, 5*time.Second)
+	defer cancelStatus()
+	if err := s.memoryRepo.MarkEmbeddingSynced(statusCtx, userID, personaID, ids); err != nil {
+		zap.L().Warn("memory: mark embedding synced failed",
+			zap.Uint64("userID", userID),
+			zap.Uint64("personaID", personaID),
+			zap.Error(err))
 	}
 }
 

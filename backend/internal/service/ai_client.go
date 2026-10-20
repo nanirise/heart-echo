@@ -97,8 +97,19 @@ type MemoryExtractResult struct {
 	ProfileUpdates json.RawMessage
 }
 
+// MemoryStoreItem 是 POST /memory/store 的一条记忆。
+//
+// ID 是 PostgreSQL 主键，Python 侧拿它当 Chroma 文档 ID —— 重试同一条记忆时
+// 是 upsert 而不是再插一份，所以这个字段不能省。
+type MemoryStoreItem struct {
+	ID              uint64  `json:"id"`
+	MemoryType      string  `json:"memory_type"`
+	Content         string  `json:"content"`
+	ImportanceScore float64 `json:"importance_score"`
+}
+
 // AIClient 是 Go 侧调用 Python AI 服务的唯一出入口。
-// 只放已经落地的内部端点：流式对话、日程解析、记忆提取。
+// 只放已经落地的内部端点：流式对话、日程解析、记忆提取、向量写入。
 type AIClient interface {
 	// StreamChat 发起一次流式生成。
 	//
@@ -113,6 +124,15 @@ type AIClient interface {
 	// ExtractMemories 调 Python 提取候选记忆与画像更新。
 	// 只负责一次内部 HTTP 调用，不落库、不判断归属（那些在 ChatService 里做）。
 	ExtractMemories(ctx context.Context, message string) (*MemoryExtractResult, error)
+
+	// StoreMemories 把已落 PostgreSQL 的记忆同步进 ChromaDB。
+	// 归属字段由 Go 侧赋值，Python 只用它们写 metadata 与过滤条件。
+	//
+	// 返回实际写入条数：MEMORY_BACKEND=recent 时 Python 返回 0 且不报错，
+	// 调用方不能把这种 200 当成"索引已建好"。
+	StoreMemories(
+		ctx context.Context, userID, personaID uint64, memories []MemoryStoreItem,
+	) (int, error)
 }
 
 type aiHTTPClient struct {
@@ -309,6 +329,59 @@ func (c *aiHTTPClient) ExtractMemories(
 		Memories:       payload.Memories,
 		ProfileUpdates: payload.ProfileUpdates,
 	}, nil
+}
+
+// StoreMemories 调用 ai-service 的向量写入端点（TECH_DESIGN §5.3 双写）。
+//
+// 只在 PostgreSQL 事务提交成功后调用：PG 是唯一事实来源，向量库只是索引。
+// 失败按 ErrAIUnavailable 返回，异步调用方只记 warn，不回滚已落库的记忆。
+func (c *aiHTTPClient) StoreMemories(
+	ctx context.Context, userID, personaID uint64, memories []MemoryStoreItem,
+) (int, error) {
+	if len(memories) == 0 {
+		return 0, nil
+	}
+
+	body, err := json.Marshal(struct {
+		UserID    uint64            `json:"user_id"`
+		PersonaID uint64            `json:"persona_id"`
+		Memories  []MemoryStoreItem `json:"memories"`
+	}{
+		UserID:    userID,
+		PersonaID: personaID,
+		Memories:  memories,
+	})
+	if err != nil {
+		return 0, errcode.Wrap(errcode.ErrInternal, err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(
+		ctx, http.MethodPost, c.baseURL+"/memory/store", bytes.NewReader(body),
+	)
+	if err != nil {
+		return 0, errcode.Wrap(errcode.ErrInternal, err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("X-Internal-Token", c.token)
+
+	resp, err := c.http.Do(httpReq)
+	if err != nil {
+		return 0, errcode.Wrap(errcode.ErrAIUnavailable, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 0, errcode.Wrap(
+			errcode.ErrAIUnavailable, fmt.Errorf("ai-service status %d", resp.StatusCode),
+		)
+	}
+
+	var payload struct {
+		Stored int `json:"stored"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return 0, errcode.Wrap(errcode.ErrInternal, err)
+	}
+	return payload.Stored, nil
 }
 
 // splitSSEBlock 按 \n\n 切块，切出来的内容不含结尾那两个换行。
