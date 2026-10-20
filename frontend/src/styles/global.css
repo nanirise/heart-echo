@@ -40,7 +40,13 @@
   /* ---------- 圆角：控件 6px / 卡片 8px / 胶囊 999px ---------- */
   --el-border-radius-small: 4px;
   --el-border-radius-round: 999px;
-  --el-card-border-radius: 8px;
+  /*
+   * 卡片圆角抽成独立令牌：`--el-card-border-radius` 还得在 `.el-card` 上再写
+   * 一次（原因见下方的 .el-card 规则），两处引用同一个值才不会走偏。
+   * 保持 `--el-card-border-radius` 是因为消息气泡、打字动画等自写元素引用了它。
+   */
+  --app-radius-card: 8px;
+  --el-card-border-radius: var(--app-radius-card);
 
   /*
    * 内容宽度三档：认证卡片 360px / 表单与设置 520px / 长文列表 680px。
@@ -68,8 +74,21 @@
   --el-text-color-placeholder: var(--color-text-placeholder);
   --el-bg-color: var(--color-bg);
   --el-border-color: var(--color-border);
-  --el-border-color-base: var(--color-border);
   --el-border-radius-base: var(--border-radius-base);
+}
+
+/*
+ * Element Plus 把 `--el-card-border-radius` 和 `--el-card-padding` 定义在
+ * `.el-card` 自身（theme-chalk/index.css），而不是 `:root`。
+ *
+ * 元素自身的声明优先于从祖先继承的值，所以只在 `:root` 里设这两个变量会被
+ * `.el-card` 的默认值（圆角 4px、内边距 20px）覆盖 —— 写了等于没写。
+ * 必须在 `.el-card` 上再声明一次。
+ *
+ * `--el-card-padding` 的窄屏收紧由 @media 单独声明。
+ */
+.el-card {
+  --el-card-border-radius: var(--app-radius-card);
 }
 
 body {
