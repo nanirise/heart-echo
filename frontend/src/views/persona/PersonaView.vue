@@ -10,6 +10,7 @@ import {
 } from '@/api/persona'
 import { toErrorMessage } from '@/api/error'
 import type { Persona } from '@/types/persona'
+import { formatDateTime } from '@/utils/datetime'
 
 import PersonaFormDialog from './PersonaFormDialog.vue'
 
@@ -23,20 +24,6 @@ const deletingId = ref<number | null>(null)
 
 const dialogVisible = ref(false)
 const editingPersona = ref<Persona | null>(null)
-
-/**
- * 契约的时间是 RFC3339 且带 6 位小数（`2026-09-28T13:53:16.172057+08:00`），
- * 必须交给 Date 解析 —— 按字符串切片在精度或时区变化时会静默错位。
- */
-function formatDateTime(value: string): string {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '—'
-
-  const pad = (part: number): string => String(part).padStart(2, '0')
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(
-    date.getHours(),
-  )}:${pad(date.getMinutes())}`
-}
 
 async function load(targetPage: number = page.value): Promise<void> {
   loading.value = true
