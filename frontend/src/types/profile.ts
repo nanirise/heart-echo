@@ -8,5 +8,10 @@
 export interface PortraitResponse {
   personaId: number
   profileData: Record<string, unknown>
-  updatedAt: string
+  /**
+   * 契约 §7：尚未生成画像时为 `null`（不是空串，也不是「此刻」）。
+   *
+   * 渲染前必须挡掉 —— `new Date(null)` 会被当成 epoch，格式化成 1970 而不是兜底符。
+   */
+  updatedAt: string | null
 }
