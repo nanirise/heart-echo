@@ -16,6 +16,8 @@ def client(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     monkeypatch.setenv("AI_SERVICE_TOKEN", TEST_TOKEN)
     monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
     monkeypatch.setenv("MEMORY_EXTRACT_BACKEND", "rule")
+    # 本机 .env 可能是 vector 档；启动预热不能连真实 Chroma。
+    monkeypatch.setenv("MEMORY_BACKEND", "recent")
     get_settings.cache_clear()
 
     from app.main import create_app
