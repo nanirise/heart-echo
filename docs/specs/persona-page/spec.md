@@ -2,7 +2,7 @@
 
 > 功能名：persona-page ｜ 分支：`feature/frontend-persona-page`
 > 负责人：成员 3（人设模块 owner，[MASTER §1](../../dev/MASTER.md)「人设管理页」一行）
-> 状态：✅ 实现完成、验收 A/B 两组读数已回填，**待人工审查 + 开 PR**（C 组未开始）｜ 创建：2026-09-28 ｜ 最后更新：2026-09-28（v2）
+> 状态：✅ **已实现并合并 / 已上线**（2026-10-20 状态同步；下文「待人工审查 + 开 PR（C 组未开始）」为原状态记录，审查与合并均已完成）｜ 创建：2026-09-28 ｜ 最后更新：2026-10-20
 > 关联契约：[API_CONTRACT.md §4](../../API_CONTRACT.md)（`GET/POST /personas`、`PUT/DELETE /personas/:id`）
 > 上游文档：[persona-crud/spec.md](../persona-crud/spec.md)（接口层，**已合并**）
 > 通用约定一律给链接，不重复描述：[AGENTS §4.9](../../../AGENTS.md)（前端接口调用约定）、[§5.1](../../../AGENTS.md)（注释纪律）、[§5.2](../../../AGENTS.md)（文档引用优先）

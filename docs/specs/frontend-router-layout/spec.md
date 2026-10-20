@@ -6,7 +6,7 @@
 | 项 | 值 |
 |----|-----|
 | 分支 | `feature/frontend-router-layout` |
-| 状态 | ✅ 代码完成，待合并 |
+| 状态 | ✅ 已实现并合并（2026-10-20 状态同步；原状态「代码完成，待合并」——PR #31 已合并） |
 | 依赖分支 | `feature/frontend-auth-request`（已合并 `4d7ff63`） |
 | 关联契约 | `docs/API_CONTRACT.md` §1（免鉴权白名单 4 个） |
 | 关联设计 | `docs/TECH_DESIGN.md` §3.3（路由管理与路由守卫） |

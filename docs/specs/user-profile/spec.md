@@ -1,7 +1,7 @@
 # spec · 用户画像（User Profile）
 
 > 功能名：user-profile ｜ 分支：`feature/backend-user-profile-model`
-> 负责人：成员 3（数据 + 人设 + 部署） ｜ 状态：**设计完成，模型层待实现**；接口层待与成员 1 对齐
+> 负责人：成员 3（数据 + 人设 + 部署） ｜ 状态：⚠️ **模型层已实现并合并；接口层未实现（后端缺口）**——2026-10-20 核对：`internal/model/user_profile.go` 与 `migrate.go` 已落地，但 `GET /profile/portrait` 在 `internal/handler/` **无 handler、`router.go` 未注册**。缺口登记见 [API_CONTRACT §7](../../API_CONTRACT.md#7-记忆与画像) 与 [MASTER §10.2](../dev/MASTER.md)。**原状态保留**：设计完成，模型层待实现；接口层待与成员 1 对齐
 > 创建：2026-09-16 ｜ 最后更新：2026-09-16（第 1 版）
 > 关联：[AGENTS.md](../../../AGENTS.md) ｜ [接口契约 §7](../../API_CONTRACT.md) ｜ [技术文档 §6.2 / §5.2 / §5.3 / §4.3](../TECH_DESIGN.md) ｜ [总纲 §0 / §4.2 / §10](../dev/MASTER.md) ｜ [成员 1 任务书 §4](../dev/MEMBER_1_BACKEND_AI.md)
 

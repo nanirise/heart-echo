@@ -6,7 +6,7 @@
 | 项 | 值 |
 |----|-----|
 | 分支 | `feature/frontend-auth-pages` |
-| 状态 | 🚧 进行中 |
+| 状态 | ✅ 已实现并合并（2026-10-20 状态同步；原状态「🚧 进行中」已过期） |
 | 依赖分支 | `feature/frontend-router-layout`（已合并，PR #31） |
 | 关联契约 | [API_CONTRACT](../../API_CONTRACT.md) §3.1 / §3.2 |
 | 关联设计 | [TECH_DESIGN](../../TECH_DESIGN.md) §3 |

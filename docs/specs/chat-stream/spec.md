@@ -9,7 +9,7 @@
 |----|-----|
 | 功能名 | `chat-stream` |
 | 分支 | `feature/chat-stream-ai-service` → `feature/chat-stream-go` |
-| 状态 | 🟡 草稿（骨架已定，细则待补） |
+| 状态 | ✅ **已实现并合并 / 已上线**（2026-10-20 状态同步：PR #51 / #59 / #62 均已并入 `develop`，全链路实测 `delta` 逐段到达 = 真流式）。**原状态保留**：🟡 草稿（骨架已定，细则待补） |
 | **本功能范围** | `POST /api/v1/chat/stream` 的**全链路三段**：Go handler/service/ai_client ↔ Python `/internal/chat/stream` ↔ 前端 `streamChat`（已合入，格式冻结） |
 | 负责人 | 成员 1 |
 | 关联契约 | [API_CONTRACT §5 / §6](../../API_CONTRACT.md)（对话 + SSE，**§6 已冻结，逐字以此为准**） |

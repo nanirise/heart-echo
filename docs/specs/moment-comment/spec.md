@@ -9,7 +9,7 @@
 | 项 | 值 |
 |----|-----|
 | 分支 | `feature/backend-moment-comment-model` |
-| 状态 | v1.3 · **代码已落，待人工审查**（spec 已过审，§5 分组 C 的 6 条注入由审查人跑） |
+| 状态 | ✅ **已实现并合并**（2026-10-20 状态同步：`GET/POST /moments/:id/comments` 已上线）。**原状态保留**：v1.3 · 代码已落，待人工审查（spec 已过审，§5 分组 C 的 6 条注入由审查人跑） |
 | **本支范围** | **模型层：`MomentComment` struct + `migrate.go` 一行**（§0.1） |
 | 负责人 | 成员 3（`JMX2033`） |
 | 依赖分支 | `feature/persona-model`、`feature/backend-ai-moment-model`（均已合并） |

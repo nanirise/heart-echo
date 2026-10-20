@@ -10,7 +10,7 @@
 | 功能名 | `proactive-message` |
 | 版本 | v1.6 |
 | 分支 | `feature/backend-proactive-trigger`（已切，本分支 3 个 commit，未推） |
-| 状态 | 🟡 联调中（settings 两端 + 前端已交付；触发链路 TriggerNow / `POST /proactive/trigger` 已落盘，待装配合并） |
+| 状态 | ✅ **已实现并合并 / 已上线**（2026-10-20 状态同步：三端点 + `ProactiveJob` 定时扫描均落地，`/proactive/trigger` 与定时任务同源复用 `TriggerNow`）。**原状态保留**：🟡 联调中（settings 两端 + 前端已交付；触发链路 TriggerNow / `POST /proactive/trigger` 已落盘，待装配合并） |
 | **本功能范围** | 触发判定 `TriggerNow` + 定时扫描 `proactive_job.go` + `GET/PUT /proactive/settings` + `POST /proactive/trigger` + 前端设置页与侧栏红点 |
 | 负责人 | 成员 3 |
 | 关联任务书 | [成员 3 任务书 §4](../../dev/MEMBER_3_DATA_MOMENTS_DEPLOY.md)（Week 3 主动消息任务表）、§8（自检） |

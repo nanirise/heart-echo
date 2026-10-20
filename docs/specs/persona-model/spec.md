@@ -8,7 +8,7 @@
 | 项 | 值 |
 |----|-----|
 | 分支 | `feature/backend-persona-model`（路由部分 `feature/backend-persona-routes`，均已合并） |
-| 状态 | 模型层 + 4 个端点已落地（PR #42 已合并） |
+| 状态 | ✅ **已实现并合并 / 已上线**（2026-10-20 状态同步）。**原状态保留**：模型层 + 4 个端点已落地（PR #42 已合并） |
 | **本功能范围** | `personas` 实体 + 4 个 CRUD 端点 + 创建人设时**同事务播种一行 `proactive_settings`** |
 | 负责人 | 成员 3（数据 + 人设 + 部署） |
 | 关联契约 | [API_CONTRACT §4](../../API_CONTRACT.md)（4 个端点 + Persona 实体）、§2（错误码总表） |

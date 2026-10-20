@@ -8,7 +8,7 @@
 | 项 | 值 |
 |----|-----|
 | 分支 | `feature/backend-chat-message-model` |
-| 状态 | 模型层已落地；仓储 / DTO / service / handler 待实现（见 §7.1） |
+| 状态 | ✅ **已实现并合并 / 已上线**（2026-10-20 状态同步：`message_repo` / `chat_dto` / `chat_service` / `chat_handler` 均落地，`GET /chat/personas/:personaId/messages` 已注册）。**原状态保留**：模型层已落地；仓储 / DTO / service / handler 待实现（见 §7.1） |
 | **本功能范围** | `chat_messages` 实体 + `Create`（**三条链路共用**）+ `GET /chat/personas/:personaId/messages` 分页读端点 |
 | 负责人 | 成员 3（数据 + 人设 + 部署）；`message_repo` / `chat_service` / `chat_handler` 的文件归属需与成员 1 对齐（§7.3） |
 | 关联契约 | [API_CONTRACT §5 / §6](../../API_CONTRACT.md)（历史消息 + SSE） |

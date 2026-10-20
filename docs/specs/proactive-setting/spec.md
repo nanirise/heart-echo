@@ -9,7 +9,7 @@
 | 项 | 值 |
 |----|-----|
 | 分支 | `feature/backend-proactive-setting-model`（基点 `3ea4051` = PR #43 合并后） |
-| 状态 | v1.1 **已过人工审查**（2026-09-20）——三处拍板见 §6 变更记录第二行；代码与文档**留在工作区未提交** |
+| 状态 | ✅ **已实现并合并 / 已上线**（2026-10-20 状态同步：`Get` / `UpdateOwned` 已落地，`GET/PUT /proactive/settings` 上线）。**原状态保留**：v1.1 已过人工审查（2026-09-20）——三处拍板见 §6 变更记录第二行；代码与文档当时留在工作区未提交 |
 | **本支范围** | **仓储层：`proactive_repo.go` 增 `Get` / `UpdateOwned` 两个方法**（模型层已落地，本支不动） |
 | 负责人 | 成员 3（`JMX2033`） |
 | 依赖分支 | 模型层已随 `6fc970e`（人设 CRUD 分支）进入 main：`internal/model/proactive_setting.go` + `migrate.go` 一行 + `CreateDefaultSettings`（用户口径为 **PR #28**；`git log` 里可查的是 `6fc970e`） |

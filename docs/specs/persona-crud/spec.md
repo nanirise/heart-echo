@@ -1,7 +1,7 @@
 # spec · 人设 CRUD（Persona CRUD）· 接口层
 
 > 功能名：persona-crud ｜ 分支：`feature/backend-persona-crud`
-> 负责人：成员 3（数据 + 人设 + 部署） ｜ 状态：设计完成，待实现
+> 负责人：成员 3（数据 + 人设 + 部署） ｜ 状态：✅ **已实现并合并 / 已上线**（2026-10-20 状态同步：四个端点已在 `router.go` 注册并实测可用；下文「设计完成，待实现」为原状态记录）
 > 创建：2026-09-16 ｜ 最后更新：2026-09-16（v1）
 > 上游文档：[persona-model/spec.md](../persona-model/spec.md)（模型层，已合并）｜ [API_CONTRACT.md §4](../../API_CONTRACT.md)（已冻结）｜ [AGENTS.md](../../../AGENTS.md) ｜ [MASTER.md §4.5](../dev/MASTER.md)
 > 关联分支产物：`internal/dto/persona_dto.go`、`internal/repository/persona_repo.go`、`internal/service/persona_service.go`、`internal/handler/persona_handler.go`

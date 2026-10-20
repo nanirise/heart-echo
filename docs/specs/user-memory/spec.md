@@ -8,7 +8,7 @@
 | 项 | 值 |
 |----|-----|
 | 分支 | `feature/backend-user-memory-model` |
-| 状态 | **模型层已落地（验收 A 组 17/17 全绿）**；接口层待与成员 1 对齐 |
+| 状态 | ⚠️ **模型层已实现并合并（验收 A 组 17/17 全绿）；接口层未实现（后端缺口）**——2026-10-20 核对：`GET /memory` 在 `internal/handler/` 无 handler、`router.go` 未注册。缺口登记见 [API_CONTRACT §7](../../API_CONTRACT.md#7-记忆与画像)。**原状态保留**：接口层待与成员 1 对齐 |
 | **本功能范围** | ① `internal/model/user_memory.go`；② `migrate.go` 追加一行；③ 本 spec / plan。**`repository/` / `service/` / `handler/` / `router.go` 等与成员 1 对齐后再动**（§6） |
 | 负责人 | 成员 3（数据 + 人设 + 部署） |
 | 关联契约 | [API_CONTRACT §7](../../API_CONTRACT.md)（`GET /memory` + MemoryItem 实体） |

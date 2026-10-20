@@ -6,7 +6,7 @@
 | 项 | 值 |
 |----|-----|
 | 分支 | `feature/frontend-chat-view` |
-| 状态 | 🚧 进行中 |
+| 状态 | ✅ 已实现并合并（2026-10-20 状态同步；原状态「🚧 进行中」已过期） |
 | 依赖分支 | `develop` `751e8c3`（2026-09-29 rebase；原从 `b05a311` 切出） |
 | 关联契约 | [API_CONTRACT](../../API_CONTRACT.md) §5 / **§6（🔒 已冻结）** / §4 |
 | 关联设计 | [TECH_DESIGN](../../TECH_DESIGN.md) §3 |
