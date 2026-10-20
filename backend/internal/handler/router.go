@@ -51,6 +51,10 @@ func NewRouter(cfg *config.Config, logger *zap.Logger, db *gorm.DB) *gin.Engine 
 	personaService := service.NewPersonaService(db)
 	RegisterPersonaRoutes(protected, NewPersonaHandler(personaService))
 
+	// 记忆与画像（契约 §7）：两者都是一人设一份，查询同时带 persona_id 与 user_id。
+	memoryService := service.NewMemoryService(db)
+	RegisterMemoryRoutes(protected, NewMemoryHandler(memoryService))
+
 	// 流式对话（契约 §6）。AIClient 不放进 NewChatService 内部，是因为 service 层不碰配置。
 	// 注意它不是全局唯一实例：main.go 的定时任务链路为了拿 ChatService 也建了一套，
 	// 两个装配点各一份（原因见那边的注释）。Week 3 若要 emotion / memory 共享同一个，

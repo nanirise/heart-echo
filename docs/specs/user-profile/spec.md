@@ -1,8 +1,8 @@
 # spec · 用户画像（User Profile）
 
 > 功能名：user-profile ｜ 分支：`feature/backend-user-profile-model`
-> 负责人：成员 3（数据 + 人设 + 部署） ｜ 状态：⚠️ **模型层已实现并合并；接口层未实现（后端缺口）**——2026-10-20 核对：`internal/model/user_profile.go` 与 `migrate.go` 已落地，但 `GET /profile/portrait` 在 `internal/handler/` **无 handler、`router.go` 未注册**。缺口登记见 [API_CONTRACT §7](../../API_CONTRACT.md#7-记忆与画像) 与 [MASTER §10.2](../dev/MASTER.md)。**原状态保留**：设计完成，模型层待实现；接口层待与成员 1 对齐
-> 创建：2026-09-16 ｜ 最后更新：2026-09-16（第 1 版）
+> 负责人：成员 3（数据 + 人设 + 部署） ｜ 状态：✅ **已实现并合并**
+> 创建：2026-09-16 ｜ 最后更新：2026-10-20
 > 关联：[AGENTS.md](../../../AGENTS.md) ｜ [接口契约 §7](../../API_CONTRACT.md) ｜ [技术文档 §6.2 / §5.2 / §5.3 / §4.3](../TECH_DESIGN.md) ｜ [总纲 §0 / §4.2 / §10](../dev/MASTER.md) ｜ [成员 1 任务书 §4](../dev/MEMBER_1_BACKEND_AI.md)
 
 > ✅ **分工边界（按 [总纲 §4.2 端点归属表](../dev/MASTER.md)）**：`GET /profile/portrait` 的**提供者是成员 1**；`internal/model/*` 属成员 3。**本分支只做三件事**：① `internal/model/user_profile.go`；② `internal/model/migrate.go` 追加一行；③ 本 spec / plan 文档。**`dto/` / `repository/` / `service/` / `handler/` / `router.go` 一律等与成员 1 对齐后再动**（避免两人同时改同一文件，AGENTS §4.8）。因此 **§4 / §5 是「交给成员 1 的设计约定」，不是本分支要落的代码**——文档先推进。与 [user-memory spec](../user-memory/spec.md) 的决策 D1 同一处理方式。
@@ -642,3 +642,4 @@ err := tx.WithContext(ctx).Exec(`
 | 2026-09-16 | v1 | 创建 | 用户画像开工前的设计与验收基线。含数据模型（`persona_id` 的 DB 级唯一性、`profile_data` 的开放键）、接口定义（3 字段响应、空画像 `{}`、缺参 `4001`）、**越权防线（读的双条件 + 本表独有的写路径覆盖风险 §5.4）**，以及两条契约空白的记录（§4.3 / §4.4）。验收标准按"禁止类与必须类成对"编写，A-2 / A-3 / A-4 / A-5 / A-6 / A-7 / A-9 / A-13 / A-14 九条**已用真实缺陷双向验证**（plan §4.4）。 |
 | 2026-09-16 | v1.1 | 修订 | §8 分组 A 的检查表：**A-6 / A-9 / A-13 / A-14 四条命令改为锚定形式**，并补上 A-14（`autoUpdateTime` 必须存在）作为 A-12 的配对项。原因：对着目标文件（含其在步骤 A1 里的真实注释）实测发现，**裸 grep 单词的形式会被注释里"为什么不能这么写"的反例说明误报成失败**（A-9 0→1、A-13 0→1、A-14 1→2 三条全部误报）；改锚定后复测，正常版读数正确、损坏版照样能响。另记入 plan §4.4"假检查 ②"。**注：同一类错误 [user-memory/spec.md](../user-memory/spec.md) 的 v3 已经记过一次——本轮是复发**，说明"知道这个坑"不能替代"每条检查都实跑一遍"。
 | 2026-09-16 | v1.2 | 修订 + **模型层落地** | ① **`persona_id` 的唯一性改用 `uniqueIndex` tag**（原定 `unique`）——落点是 **Indexes 段的 `idx_user_profile_persona_id`**，不是 Constraints 段。§3.3 / §3.2 / §3.5 / §5.5 / §6 / §7.2 / §7.3 决策 2 已同步；**A 组的唯一性验收项从"Constraints 段"改为"Indexes 段"**——不改的话正确实现会被判假失败。② **A 组已在一次性容器里全绿实测**（§3.3 实测记录 + plan §4.4）：表结构 5 列逐项对齐、唯一索引与 2 个 `CASCADE` 外键、`DEFAULT '{}'`、JSONB 中文/数组往返逐字一致、**UPSERT 的合并 / 同名覆盖 / 越权兜底（`INSERT 0 0` 且内容与 `updated_at` 逐字未变）**、两层级联删除（删账号 → 删人设 → 删画像）、以及**索引反向验证**（`DROP INDEX` 后同一 `persona_id` 真的插进第二行）。③ 记入两条**假验证**：子查询造冲突行时条件写错会静默得到 `INSERT 0 0`（唯一性根本没被考验）；用新人设测"重复 persona_id"等于没测。
+| 2026-10-20 | v1.3 | **补齐接口实现**：`GET /profile/portrait` 落地（DTO / 仓储 / 服务 / handler / 路由注册），返回恰 3 字段；空画像 `200` + `profileData: {}` + `updatedAt: null`；缺参 `4001`、越权/不存在 `4043`。契约 §7 已同步 | 接口层缺口关闭 |

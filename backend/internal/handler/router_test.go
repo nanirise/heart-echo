@@ -172,6 +172,9 @@ var protectedRoutes = []struct {
 	{"personas", "/api/v1/personas"},
 	{"user/profile", "/api/v1/user/profile"},
 	{"proactive/settings", "/api/v1/proactive/settings?personaId=1"},
+	// 契约 §7 的两条只读端点。personaId 必传，不带会在 handler 层停在 4001。
+	{"memory", "/api/v1/memory?personaId=1"},
+	{"profile/portrait", "/api/v1/profile/portrait?personaId=1"},
 }
 
 // TestPersonaRoutesRejectAnonymousRequests 逐条打一遍：不带 token 必须全部 4010。
