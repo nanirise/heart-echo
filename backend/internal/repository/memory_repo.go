@@ -102,6 +102,26 @@ func (r *MemoryRepo) UpsertPortrait(
 	return nil
 }
 
+// MarkEmbeddingSynced 在 ChromaDB 写入成功后回填索引状态与 embedding_id。
+//
+// 这是双写收尾，不是事实来源：失败只记日志，记忆本身已经提交。
+// WHERE 仍带 user_id + persona_id —— 一个错误的 id 不能把别人的行标成已索引。
+func (r *MemoryRepo) MarkEmbeddingSynced(
+	ctx context.Context, userID, personaID uint64, ids []uint64,
+) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	return r.db.WithContext(ctx).
+		Model(&model.UserMemory{}).
+		Where("id IN ? AND user_id = ? AND persona_id = ?", ids, userID, personaID).
+		Updates(map[string]any{
+			// embedding_id 与 Chroma 文档 ID 必须逐字一致：都是 user_memory.id。
+			"embedding_id":     gorm.Expr("id::text"),
+			"embedding_status": "synced",
+		}).Error
+}
+
 // FindPortrait 读当前用户某个人设的画像。
 // 查不到行返回 (nil, nil) 而不是 gorm.ErrRecordNotFound：没有画像是合法空态，
 // 不是错误；把它翻译成错误会让 service 把空态误判成 5003。
