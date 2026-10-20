@@ -1,18 +1,23 @@
+import asyncio
 import json
+import logging
 from collections.abc import AsyncIterator
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.agents.memory_agent import build_memory_extractor
+from app.core.config import get_settings
 from app.core.llm_client import LLMUnavailableError, stream_reply
 from app.core.security import verify_internal_token
+from app.memory import MemoryRecord, get_retriever
 from app.schedules.rule_parser import has_reminder_intent, parse_schedule
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class PersonaBrief(BaseModel):
@@ -116,6 +121,34 @@ class MemoryExtractResponse(BaseModel):
     profile_updates: dict[str, Any]
 
 
+class StoreMemoryItem(BaseModel):
+    """一条已落 PostgreSQL、等待建索引的记忆。id 是 PG 主键，用作 Chroma 文档 ID。"""
+
+    id: int = Field(gt=0)
+    # 与提取侧同一组取值：情绪不建索引，也不该出现在向量库里（AGENTS §4.4）。
+    memory_type: Literal["fact", "preference", "event"]
+    content: str = Field(min_length=1)
+    importance_score: float
+
+
+class MemoryStoreRequest(BaseModel):
+    """Go → Python 的向量写入请求（TECH_DESIGN §5.3 双写）。
+
+    user_id / persona_id 由 Go 侧从本轮对话赋值，用于 Chroma metadata 的归属过滤。
+    """
+
+    user_id: int = Field(gt=0)
+    persona_id: int = Field(gt=0)
+    memories: list[StoreMemoryItem] = Field(min_length=1)
+    model_config = ConfigDict(extra="forbid")
+
+
+class MemoryStoreResponse(BaseModel):
+    """stored=0 表示当前是 recent 档（未写向量库），不是错误。"""
+
+    stored: int
+
+
 @router.get("/health")
 async def health() -> dict[str, str]:
     """Go 侧探活用，**故意不校验 token** —— 契约 §11 明写健康检查不带 X-Internal-Token。
@@ -139,8 +172,44 @@ def _sse(event: str, data: str) -> str:
 _ERR_LLM_FAILED = 5001
 _ERR_LLM_FAILED_MESSAGE = "AI 回复生成失败，请稍后重试"
 
+# 记忆检索的等待上限。模型在启动预热时已加载，正常 Top-K 查询是毫秒级；
+# 超时降级为无记忆，不影响对话（AGENTS §4.7：检索是可替换实现，不是主链路）。
+_RETRIEVE_TIMEOUT_SECONDS = 10.0
+
+
+def _retrieve_sync(user_id: int, persona_id: int, query: str) -> list[str]:
+    """同步召回。单独成函数是为了把 get_retriever() 也放进线程池 ——
+    首次构造 VectorMemoryRetriever 会连 Chroma 并加载 ONNX 模型，不能发生在事件循环里。
+    """
+    return get_retriever().retrieve(
+        user_id,
+        persona_id,
+        query,
+        get_settings().memory_top_k,
+    )
+
+
+async def _retrieve_memories(user_id: int, persona_id: int, query: str) -> list[str]:
+    """按 MEMORY_BACKEND 召回长期记忆；失败降级为无记忆，绝不影响主对话。"""
+    # [nudge] 是系统注入的，不是用户输入，拿它做语义检索只会召回噪声。
+    if query.lstrip().startswith("[nudge]"):
+        return []
+
+    try:
+        # 检索发生在首字之前：Chroma 卡死时必须放弃等待，不能把回复拖到无限期。
+        # 超时后线程仍会被回收，等待方直接降级为无记忆。
+        return await asyncio.wait_for(
+            asyncio.to_thread(_retrieve_sync, user_id, persona_id, query),
+            timeout=_RETRIEVE_TIMEOUT_SECONDS,
+        )
+    except Exception:
+        logger.exception("memory retrieval failed")  # logger.exception 会自动打印完整的红色 Traceback
+        return []
+
 
 async def _chat_stream(
+    user_id: int,
+    persona_id: int,
     message: str,
     persona: PersonaBrief | None,
     history: list[HistoryTurn],
@@ -150,8 +219,11 @@ async def _chat_stream(
     失败时**不发 end**：end 的语义是"生成完了，你可以落库了"，两者同时出现会让 Go
     对着一句半截话去落库。
     """
+    memories = await _retrieve_memories(user_id, persona_id, message)
     try:
-        async for text in stream_reply(message, persona=persona, history=history):
+        async for text in stream_reply(
+            message, persona=persona, history=history, memories=memories
+        ):
             yield _sse("delta", json.dumps({"text": text}, ensure_ascii=False))
     except LLMUnavailableError:
         # 已经吐出去的 delta 收不回来 —— 前端会先留半句话再叠一条错误提示。
@@ -178,12 +250,12 @@ async def stream_chat(req: ChatRequest) -> StreamingResponse:
     - Cache-Control 防止中间层缓存事件流
     - X-Accel-Buffering: no 关掉 Nginx 的 proxy_buffering（AGENTS §4.5）
 
-    req.user_id / persona_id 仍不参与生成，只做校验与日志。真正决定"谁在说话、记不记得
-    上一句"的是 req.persona 与 req.history —— 它们由 Go 侧从数据库取好送进来，
-    因为本服务不连数据库（spec §2.2）。
+    req.user_id / persona_id 只用于向量检索的归属过滤（AGENTS §4.3）；生成侧仍由
+    req.persona 与 req.history 决定"谁在说话、记不记得上一句" —— 它们由 Go 侧从数据库
+    取好送进来，因为本服务不连 PostgreSQL（spec §2.2）。
     """
     return StreamingResponse(
-        _chat_stream(req.message, req.persona, req.history),
+        _chat_stream(req.user_id, req.persona_id, req.message, req.persona, req.history),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -236,3 +308,28 @@ async def extract_memory(req: MemoryExtractRequest) -> MemoryExtractResponse:
         memories=[MemoryItem(**candidate.as_contract()) for candidate in result.memories],
         profile_updates=result.profile_updates,
     )
+
+
+@router.post("/memory/store", dependencies=[Depends(verify_internal_token)])
+async def store_memories(req: MemoryStoreRequest) -> MemoryStoreResponse:
+    """把已落 PostgreSQL 的记忆同步进 ChromaDB（TECH_DESIGN §5.3 双写）。
+
+    PostgreSQL 是唯一事实来源：本接口只建索引，失败不回滚 PG。
+    Go 侧在事务提交后调用，失败只记 warn，embedding_status 保持 pending。
+    """
+    records: list[MemoryRecord] = [
+        MemoryRecord(
+            id=memory.id,
+            memory_type=memory.memory_type,
+            content=memory.content,
+            importance_score=memory.importance_score,
+        )
+        for memory in req.memories
+    ]
+
+    def store_sync() -> int:
+        return get_retriever().store(req.user_id, req.persona_id, records)
+
+    # 与检索同一个理由：客户端构造与 embedding 都是阻塞的。
+    stored = await asyncio.to_thread(store_sync)
+    return MemoryStoreResponse(stored=stored)
