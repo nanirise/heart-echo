@@ -8,7 +8,7 @@
 | 项 | 值 |
 |----|-----|
 | 分支 | `feature/backend-user-memory-model` |
-| 状态 | ⚠️ **模型层已实现并合并（验收 A 组 17/17 全绿）；接口层未实现（后端缺口）**——2026-10-20 核对：`GET /memory` 在 `internal/handler/` 无 handler、`router.go` 未注册。缺口登记见 [API_CONTRACT §7](../../API_CONTRACT.md#7-记忆与画像)。**原状态保留**：接口层待与成员 1 对齐 |
+| 状态 | ✅ **已实现并合并** |
 | **本功能范围** | ① `internal/model/user_memory.go`；② `migrate.go` 追加一行；③ 本 spec / plan。**`repository/` / `service/` / `handler/` / `router.go` 等与成员 1 对齐后再动**（§6） |
 | 负责人 | 成员 3（数据 + 人设 + 部署） |
 | 关联契约 | [API_CONTRACT §7](../../API_CONTRACT.md)（`GET /memory` + MemoryItem 实体） |
@@ -292,3 +292,4 @@ CreateBatch(ctx context.Context, tx *gorm.DB, memories []*model.UserMemory) erro
 | 2026-09-15 | v3 | **模型层落地 + 分组 A 全绿（17/17）**。修正**六处会误伤正确代码的验收写法**（裸 grep 误报、`json:"-"` 数量是 7 不是 4、`MemoryType string` 会命中类型声明本身、`\d` 显示 `bigint + nextval` 即正确、"抽 6 个 JSON 名"必须三步、期望 0 的 grep 不能 `&&` 串联）；**修正一处机制写反**：`embedding_status` 的默认值由 GORM 显式写进 INSERT，不走 DB 默认值。新增三条补充验证（零值关联不连带写库、pgx `float64→numeric` 可用、表名非复数） | 实跑结论回填：把"我以为的验收标准"改成"实际能判别的验收标准"，避免下一个人照文档做却拿到假失败 |
 | 2026-09-15 | v4 | **分组 A 增补一条 tag 完整性检查** | 实际出过事故：`SourceMessage` 的 gorm tag 被截断，`foreignKey` / `references` 丢失，而 `go build` / `vet` / `gofmt` 全部照过。**原检查组全是"查有没有违规"，没有一条查"tag 是否完整"**——而缺 key 恰恰不产生任何报错 |
 | 2026-09-20 | v5 | **按 AGENTS §5.2 引用优先精简**：删除从 TECH_DESIGN / API_CONTRACT 复制粘贴的 DDL 原文、字段对照表、通用约定表与红线自查表，改为链接；分组 A 的 7 条命令收成一张表（完整命令移入 plan §3.3）（532 → 294 行，行数按 `wc -l` 含空行）。**修正一处过期事实**：原文称 `JWTAuth` 是空壳、接口层端到端验收做不了——现已确认 `middleware/jwt.go` 的 `c.Set(ContextKeyUserID, claims.UserID)` 已落地，该阻塞解除 | 文档膨胀 + 依赖状态已变化 |
+| 2026-10-20 | v6 | **补齐接口实现**：`GET /memory` 落地（DTO / 仓储 / 服务 / handler / 路由注册），响应恰 6 字段，双条件查询，空态 `200` + `list: []`；缺参 `4001`、越权/不存在 `4043`。契约 §7 已同步 | 接口层缺口关闭 |

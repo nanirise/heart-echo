@@ -294,14 +294,13 @@ data: {"code":5001,"message":"AI 回复生成失败，请稍后重试"}
 
 | 端点 | 请求 | 响应 data | 错误码 |
 |------|------|-----------|--------|
-| `GET /memory` ⬜ | `personaId` `page` `pageSize` | `PageResult<MemoryItem>` | 4043 |
-| `GET /profile/portrait` ⬜ | `personaId` | `{ "personaId": 1, "profileData": {}, "updatedAt": "..." }` | 4043 |
-
-> ⚠️ **实现缺口（2026-10-20 核对登记）**：上表两条**后端尚未落地**——`internal/handler/` 下没有对应 handler，`router.go` 也没有注册这两条路由，实测请求会命中未注册路由。前端 `frontend/src/api/profile.ts` 的 `getPortrait()` 已在调用 `/profile/portrait`，`ProfileView` 因此只能走「暂无画像数据」兜底。
-> 故这两行的状态**保留 `⬜`**，不改为 `✅`：契约（字段与语义）已冻结，但接口尚不存在。补齐前请勿把这两条写进演示脚本。
+| `GET /memory` ✅ | `personaId` `page` `pageSize` | `PageResult<MemoryItem>` | 4001 4043 |
+| `GET /profile/portrait` ✅ | `personaId` | `{ "personaId": 1, "profileData": {}, "updatedAt": null }` | 4001 4043 |
 
 > 前端**必须传 `personaId`**（切到哪个伴侣就看谁的记忆/画像）；服务端除校验人设归属外还会带上 `user_id` 条件。**前端永远不传 `user_id`**——它从 Token 取。
 > 本期记忆**只读**，不提供删除接口。
+> **空画像不是错误**：人设属于当前用户但尚无画像时，返回 `200` + `profileData: {}` + `updatedAt: null`，**不返回 `4043`**。
+> `updatedAt` **可能为 `null`（尚未生成画像时）**；已有画像时为 RFC3339 时间字符串。前端 TS 类型须写成 `string | null`。
 
 **MemoryItem**
 
@@ -481,6 +480,7 @@ data: {"code":5001,"message":"AI 回复生成失败，请稍后重试"}
 | 2026-10-05 | v1 | **内部接口** `POST /internal/chat/stream` 请求体新增两个**可选**字段 `persona`（人格三字段）与 `history`（最近 20 条，时间正序）。**对外契约 §5 / §6 无任何变化**：前端请求体 `{personaId, content}` 与 SSE 事件三型均未改动，前端无需调整。不传新字段时 ai-service 行为与原先完全一致。⚠️ 原实现中 ai-service 既拿不到人格也拿不到历史，模型看到的上下文只有当前这一句，**人格完全不生效且每轮失忆**；根因是 LLM 接口无状态、上下文必须由调用方每次带入 | `/internal/chat/stream`（不在本契约 §1-11 内，定义见 [chat-stream spec §2.2](specs/chat-stream/spec.md)） | 成员 1 | ⬜ |
 | 2026-10-06 | v1 | intervalMin / intervalMax 下限 5 → 1，演示场景需 1 分钟触发 | §9 | 成员3 | ⬜ |
 | 2026-10-20 | v1 | **全量状态同步（仅状态列，无字段变更）**：§3–§11 除 §7 两条外的全部端点状态 `⬜` → `✅`，对应代码已在 `internal/handler/router.go` 内注册并经核对。本轮登记的实际落地内容：① **朋友圈四个端点**（`GET /moments`、`POST /moments/:id/like`、`GET/POST /moments/:id/comments`）已上线，动态由 `MomentJob` 定时生成，无手动触发接口；② **日程三个端点**（`GET /schedules`、`DELETE /schedules/:id`、`POST /schedules/:id/trigger`）已上线，`ScheduleJob` 与 `ProactiveJob` 共用 `PROACTIVE_JOB_INTERVAL` 扫描；③ **主动消息三个端点**已上线，`/proactive/trigger` 与 `ProactiveJob` 同源复用 `TriggerNow`；④ **亲密度通过 `Persona.state` 返回**：`familiarity` 由 `state.familiarity` 拍平输出，回复成功后 `IncrementFamiliarity` 原子加一、封顶 100，并按区间映射为关系阶段注入 prompt；⑤ 人设四个端点、对话两个端点、SSE 均已上线。**§7 的 `GET /memory` 与 `GET /profile/portrait` 仍为 `⬜`**——后端无 handler、无路由注册，缺口已就地登记在该节，未随本轮改为 ✅ | §3 §4 §5 §6 §8 §9 §10 §11 | 文档同步 | ⬜ |
+| 2026-10-20 | v1 | 补全 /memory 与 /profile/portrait 契约：加入 4001 错误码，明确空画像返回 {} | §7 | 成员3 | ⬜ |
 | 待填 | v1 | 初始冻结 | 全部 | — | — |
 
 ---
