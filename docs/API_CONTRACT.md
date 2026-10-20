@@ -65,12 +65,12 @@
 | 4013 | 401 | 用户名或密码错误 | 登录失败（不区分用户不存在，防枚举） |
 | 4014 | 401 | 刷新令牌无效，请重新登录 | refresh 失败 |
 | 4015 | 401 | 原密码不正确 | 修改密码时旧密码校验失败 |
-| 4030 | 403 | 无权限使用该功能 | **功能越权**（封禁用户访问、无权限的功能） |
-| ~~4031~~ | — | ~~该人设不属于当前用户~~（已废弃：资源越权按「资源不存在」返回 4043） | 保留占位，勿复用 |
+| 4030 | 403 | 无权限使用该功能 | **功能越权**（封禁用户访问、无权限的功能）。2026-10-20 核对：`errcode.go` 中常量注释即「功能越权」，资源越权不走此码 |
+| ~~4031~~ | — | ~~该人设不属于当前用户~~（已废弃：资源越权按「资源不存在」返回 4043） | 保留占位，勿复用。2026-10-20 核对：`errcode.go` 已无此常量，全仓 grep 无 `4031` 引用 |
 | 4040 | 404 | 资源不存在 | 通用 |
 | 4041 | 404 | 用户不存在 | |
 | ~~4042~~ | — | ~~会话不存在~~（已废弃：无会话实体，一人设一对话） | 保留占位，勿复用 |
-| 4043 | 404 | 人设不存在 | 含「该人设的对话不存在」；**资源越权也返回此码**——访问他人 persona 时按不存在处理，不暴露该 `persona_id` 是否存在 |
+| 4043 | 404 | 人设不存在 | 含「该人设的对话不存在」；**资源越权也返回此码**——访问他人 persona 时按不存在处理，不暴露该 `persona_id` 是否存在。2026-10-20 核对：persona / chat / proactive / schedule 各 service 的资源归属失败均返回此码，语义与现状一致 |
 | 5000 | 500 | 服务端内部错误 | panic / 未分类错误 |
 | 5001 | 500 | AI 回复生成失败，请稍后重试 | LLM 调用失败 |
 | 5002 | 500 | AI 服务暂时不可用 | AI 服务不可达 |
@@ -82,7 +82,7 @@
 
 ## 3. 认证与用户
 
-### 3.1 `POST /auth/register` — 注册 ⬜
+### 3.1 `POST /auth/register` — 注册 ✅
 
 请求：
 
@@ -110,21 +110,21 @@
 
 > **注册即登录**：本接口已返回 token，前端直接写入登录态并跳转 `/chat`，**不要**再让用户去登录页手动登录一次。
 
-### 3.2 `POST /auth/login` — 登录 ⬜
+### 3.2 `POST /auth/login` — 登录 ✅
 
 请求 `{ "username": "...", "password": "..." }`，响应 data 同注册。
 错误码：`4001` `4013`
 
-### 3.3 `POST /auth/refresh` — 刷新令牌 ⬜
+### 3.3 `POST /auth/refresh` — 刷新令牌 ✅
 
 请求 `{ "refreshToken": "..." }`，响应 data `{ "accessToken": "...", "refreshToken": "..." }`。
 错误码：`4014`
 
-### 3.4 `GET /user/profile` — 当前用户信息 ⬜
+### 3.4 `GET /user/profile` — 当前用户信息 ✅
 
 响应 data：`{ "id": 1, "username": "xiaoming", "email": "xm@example.com", "avatarUrl": null, "createdAt": "2026-09-10T14:30:00+08:00" }`
 
-### 3.5 `PUT /user/profile` — 更新用户信息 ⬜
+### 3.5 `PUT /user/profile` — 更新用户信息 ✅
 
 请求 `{ "avatarUrl": "https://...", "username": "newname" }`（两个字段都可选，只传要改的），响应 data 同上。
 
@@ -145,7 +145,7 @@
 >
 > ⚠️ 最常见的踩雷方式：**把整个 user 对象 PUT 上来**（`{id, username, email, avatarUrl, createdAt}`）。这是前端很自然的写法——store 里本来就有这个对象——但 `id` / `email` / `createdAt` 在这里都是不认识的键，会直接 `4001`。只发要改的字段。
 
-### 3.6 `PUT /user/password` — 修改密码 ⬜
+### 3.6 `PUT /user/password` — 修改密码 ✅
 
 请求 `{ "oldPassword": "...", "newPassword": "..." }`，响应 data `null`。
 
@@ -187,10 +187,10 @@
 
 | 端点 | 请求 | 响应 data | 错误码 |
 |------|------|-----------|--------|
-| `GET /personas` ⬜ | `page` `pageSize` | `PageResult<Persona>` | — |
-| `POST /personas` ⬜ | `{name, personalityDesc, speakingStyle}` | `Persona` | 4001 |
-| `PUT /personas/:id` ⬜ | 同上 | `Persona` | 4001 4043 |
-| `DELETE /personas/:id` ⬜ | — | `null` | 4043 |
+| `GET /personas` ✅ | `page` `pageSize` | `PageResult<Persona>` | — |
+| `POST /personas` ✅ | `{name, personalityDesc, speakingStyle}` | `Persona` | 4001 |
+| `PUT /personas/:id` ✅ | 同上 | `Persona` | 4001 4043 |
+| `DELETE /personas/:id` ✅ | — | `null` | 4043 |
 
 > 所有涉及 `:id` 的操作，服务端必须校验该人设属于当前登录用户（`user_id`）；**不属于本人时按「人设不存在」返回 `4043`**，不返回 403——403 会暴露该 `persona_id` 存在，而它是全局自增的，可被顺序试号探测。
 > 删除人设会**级联删除**该人设的全部消息与记忆关联，前端必须二次确认后再调。
@@ -223,14 +223,14 @@
 
 | 端点 | 请求 | 响应 data | 错误码 |
 |------|------|-----------|--------|
-| `GET /chat/personas/:personaId/messages` ⬜ | `page` `pageSize` | `PageResult<ChatMessage>` | 4043 |
-| `POST /chat/stream` ⬜ | 见 §6 | SSE | 4001 4010 4043 5001 5002 |
+| `GET /chat/personas/:personaId/messages` ✅ | `page` `pageSize` | `PageResult<ChatMessage>` | 4043 |
+| `POST /chat/stream` ✅ | 见 §6 | SSE | 4001 4010 4043 5001 5002 |
 
 > **一个人设 = 一个对话**。没有会话实体，也就没有"新建对话/删除对话/会话列表"这三组接口——对话列表直接复用 `GET /personas`（见 §4，按 `lastMessageAt` 倒序），删人设即删对话（消息级联删除）。
 
 ---
 
-## 6. SSE 契约（`POST /chat/stream`）🔒
+## 6. SSE 契约（`POST /chat/stream`）✅
 
 **请求**
 
@@ -297,6 +297,9 @@ data: {"code":5001,"message":"AI 回复生成失败，请稍后重试"}
 | `GET /memory` ⬜ | `personaId` `page` `pageSize` | `PageResult<MemoryItem>` | 4043 |
 | `GET /profile/portrait` ⬜ | `personaId` | `{ "personaId": 1, "profileData": {}, "updatedAt": "..." }` | 4043 |
 
+> ⚠️ **实现缺口（2026-10-20 核对登记）**：上表两条**后端尚未落地**——`internal/handler/` 下没有对应 handler，`router.go` 也没有注册这两条路由，实测请求会命中未注册路由。前端 `frontend/src/api/profile.ts` 的 `getPortrait()` 已在调用 `/profile/portrait`，`ProfileView` 因此只能走「暂无画像数据」兜底。
+> 故这两行的状态**保留 `⬜`**，不改为 `✅`：契约（字段与语义）已冻结，但接口尚不存在。补齐前请勿把这两条写进演示脚本。
+
 > 前端**必须传 `personaId`**（切到哪个伴侣就看谁的记忆/画像）；服务端除校验人设归属外还会带上 `user_id` 条件。**前端永远不传 `user_id`**——它从 Token 取。
 > 本期记忆**只读**，不提供删除接口。
 
@@ -349,10 +352,10 @@ data: {"code":5001,"message":"AI 回复生成失败，请稍后重试"}
 
 | 端点 | 请求 | 响应 data | 错误码 |
 |------|------|-----------|--------|
-| `GET /moments` ⬜ | `page` `pageSize` | `PageResult<Moment>` | — |
-| `POST /moments/:id/like` ⬜ | — | `{ "likeCount": 3, "liked": true }` | 4040 |
-| `GET /moments/:id/comments` ⬜ | `page` `pageSize` | `PageResult<Comment>` | 4040 |
-| `POST /moments/:id/comments` ⬜ | `{content}` | `Comment` | 4001 4040 |
+| `GET /moments` ✅ | `page` `pageSize` | `PageResult<Moment>` | — |
+| `POST /moments/:id/like` ✅ | — | `{ "likeCount": 3, "liked": true }` | 4040 |
+| `GET /moments/:id/comments` ✅ | `page` `pageSize` | `PageResult<Comment>` | 4040 |
+| `POST /moments/:id/comments` ✅ | `{content}` | `Comment` | 4001 4040 |
 
 > **可见范围是账号内**：只能看到自己创建的 AI 的动态。账号之间完全隔离，不存在跨用户的动态或评论。
 > **没有 `POST /moments/generate`**：动态只由后台定时任务产生，不提供手动触发接口。演示依赖提前灌好的历史动态 + 调短的定时间隔（见技术文档 §5.5）。
@@ -371,9 +374,9 @@ data: {"code":5001,"message":"AI 回复生成失败，请稍后重试"}
 
 | 端点 | 请求 | 响应 data | 错误码 |
 |------|------|-----------|--------|
-| `GET /proactive/settings` ⬜ | `personaId` | `Settings` | 4001 4043 |
-| `PUT /proactive/settings` ⬜ | `personaId` + 可改字段 | `Settings` | 4001 4043 |
-| `POST /proactive/trigger` 🚨 ⬜ | `{personaId}` | `{messageId, content, createdAt}` | 4001 4043 5001 |
+| `GET /proactive/settings` ✅ | `personaId` | `Settings` | 4001 4043 |
+| `PUT /proactive/settings` ✅ | `personaId` + 可改字段 | `Settings` | 4001 4043 |
+| `POST /proactive/trigger` 🚨 ✅ | `{personaId}` | `{messageId, content, createdAt}` | 4001 4043 5001 |
 
 **可改字段与约束**（前端三个控件，都要给）
 
@@ -416,9 +419,9 @@ data: {"code":5001,"message":"AI 回复生成失败，请稍后重试"}
 
 | 端点 | 请求 | 响应 data | 错误码 |
 |------|------|-----------|--------|
-| `GET /schedules` ⬜ | `personaId`（**必带**）+ `page` `pageSize` | `PageResult<Schedule>` | 4001 4043 |
-| `DELETE /schedules/:id` ⬜ | — | `data: null` | 4040 |
-| `POST /schedules/:id/trigger` 🚨 ⬜ | — | `{messageId, content, createdAt}` | 4040 5001 |
+| `GET /schedules` ✅ | `personaId`（**必带**）+ `page` `pageSize` | `PageResult<Schedule>` | 4001 4043 |
+| `DELETE /schedules/:id` ✅ | — | `data: null` | 4040 |
+| `POST /schedules/:id/trigger` 🚨 ✅ | — | `{messageId, content, createdAt}` | 4040 5001 |
 
 > **`personaId` 是必传的**：日程跟记忆一样是「一人设一份」，不带 `personaId` 无法确定查谁的日程。缺失返回 `4001`。
 > **取消是软删除**：`DELETE` 把 `status` 置为 `cancelled`，不物理删行（保留可回溯）。重复删除同一条是幂等的。
@@ -433,7 +436,7 @@ data: {"code":5001,"message":"AI 回复生成失败，请稍后重试"}
 
 ## 11. 健康检查
 
-`GET /api/v1/health` ⬜ — 无需鉴权
+`GET /api/v1/health` ✅ — 无需鉴权
 
 ```json
 { "status": "ok", "dependencies": { "database": "ok", "aiService": "ok" } }
@@ -477,6 +480,7 @@ data: {"code":5001,"message":"AI 回复生成失败，请稍后重试"}
 | 2026-09-30 | v1 | `PUT /user/profile` **改为严格解码**：请求体出现 `username` / `avatarUrl` 以外的键返回 `4001`（原为静默忽略并返回 `200`）。它是全项目唯一的「部分更新」接口，两个字段都可选、`{}` 是合法请求，所以默认的宽松解码会让「什么都没想改」和「字段名拼错了」返回完全一样的 `200 保存成功`。⚠️ 前端注意：**不要把整个 user 对象 PUT 上来**，`id` / `email` / `createdAt` 会触发 `4001` | §3.5 | 成员 1 | ⬜ |
 | 2026-10-05 | v1 | **内部接口** `POST /internal/chat/stream` 请求体新增两个**可选**字段 `persona`（人格三字段）与 `history`（最近 20 条，时间正序）。**对外契约 §5 / §6 无任何变化**：前端请求体 `{personaId, content}` 与 SSE 事件三型均未改动，前端无需调整。不传新字段时 ai-service 行为与原先完全一致。⚠️ 原实现中 ai-service 既拿不到人格也拿不到历史，模型看到的上下文只有当前这一句，**人格完全不生效且每轮失忆**；根因是 LLM 接口无状态、上下文必须由调用方每次带入 | `/internal/chat/stream`（不在本契约 §1-11 内，定义见 [chat-stream spec §2.2](specs/chat-stream/spec.md)） | 成员 1 | ⬜ |
 | 2026-10-06 | v1 | intervalMin / intervalMax 下限 5 → 1，演示场景需 1 分钟触发 | §9 | 成员3 | ⬜ |
+| 2026-10-20 | v1 | **全量状态同步（仅状态列，无字段变更）**：§3–§11 除 §7 两条外的全部端点状态 `⬜` → `✅`，对应代码已在 `internal/handler/router.go` 内注册并经核对。本轮登记的实际落地内容：① **朋友圈四个端点**（`GET /moments`、`POST /moments/:id/like`、`GET/POST /moments/:id/comments`）已上线，动态由 `MomentJob` 定时生成，无手动触发接口；② **日程三个端点**（`GET /schedules`、`DELETE /schedules/:id`、`POST /schedules/:id/trigger`）已上线，`ScheduleJob` 与 `ProactiveJob` 共用 `PROACTIVE_JOB_INTERVAL` 扫描；③ **主动消息三个端点**已上线，`/proactive/trigger` 与 `ProactiveJob` 同源复用 `TriggerNow`；④ **亲密度通过 `Persona.state` 返回**：`familiarity` 由 `state.familiarity` 拍平输出，回复成功后 `IncrementFamiliarity` 原子加一、封顶 100，并按区间映射为关系阶段注入 prompt；⑤ 人设四个端点、对话两个端点、SSE 均已上线。**§7 的 `GET /memory` 与 `GET /profile/portrait` 仍为 `⬜`**——后端无 handler、无路由注册，缺口已就地登记在该节，未随本轮改为 ✅ | §3 §4 §5 §6 §8 §9 §10 §11 | 文档同步 | ⬜ |
 | 待填 | v1 | 初始冻结 | 全部 | — | — |
 
 ---
