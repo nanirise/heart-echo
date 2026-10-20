@@ -1,5 +1,6 @@
 import json
 from collections.abc import AsyncIterator
+from datetime import datetime
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
@@ -7,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.llm_client import LLMUnavailableError, stream_reply
 from app.core.security import verify_internal_token
+from app.schedules.rule_parser import has_reminder_intent, parse_schedule
 
 router = APIRouter()
 
@@ -57,6 +59,33 @@ class ChatRequest(BaseModel):
 
     # 同 PersonaBrief：字段名拼错必须 422，不能退化成"这个字段没传"。
     model_config = ConfigDict(extra="forbid")
+
+
+class ScheduleParseRequest(BaseModel):
+    """Go → Python 的日程解析请求（TECH_DESIGN §5.7）。
+
+    只收用户原话：解析不需要 user_id / persona_id，归属校验与落库都在 Go 侧。
+    """
+
+    message: str = Field(min_length=1)
+    model_config = ConfigDict(extra="forbid")
+
+
+class ScheduleParseResponse(BaseModel):
+    """解析结果，三个互斥出口（配合 response_model_exclude_none 只发有值的字段）。
+
+    - has_intent=false：这句话不是提醒委托（如"我明天要开会"），不建日程也不回问
+    - has_intent=true + need_clarify=true：有提醒意图但时间/事件解析不出，Go 侧应让 AI 回问
+    - has_intent=true + need_clarify=false + content + remind_at：解析成功，Go 侧据此建日程
+
+    has_intent 必须显式下发：Go 侧不能把"缺省字段"与"明确没有意图"混为一谈，
+    否则陈述句也会被当成需要澄清的委托。
+    """
+
+    has_intent: bool
+    content: str | None = None
+    remind_at: datetime | None = None
+    need_clarify: bool | None = None
 
 
 @router.get("/health")
@@ -132,4 +161,36 @@ async def stream_chat(req: ChatRequest) -> StreamingResponse:
             "Cache-Control": "no-cache",
             "X-Accel-Buffering": "no",
         },
+    )
+
+
+@router.post(
+    "/schedule/parse",
+    dependencies=[Depends(verify_internal_token)],
+    response_model_exclude_none=True,
+)
+async def parse_schedule_endpoint(req: ScheduleParseRequest) -> ScheduleParseResponse:
+    """把用户原话解析成 {has_intent, content, remind_at}，解析不出时给 need_clarify。
+
+    路径按 TECH_DESIGN §5.7 固定为 /schedule/parse（不是 /internal/...）；
+    鉴权仍走 X-Internal-Token，与 /internal/chat/stream 同一道防线。
+
+    三种出口都不能省略：把"没有提醒意图"也回成 need_clarify=true，会让 AI 对
+    每一句陈述都追问一次，比漏建日程更打扰用户。
+    """
+    text = req.message.strip()
+    if not has_reminder_intent(text):
+        # 陈述句不是委托：不建日程，也不回问。
+        return ScheduleParseResponse(has_intent=False)
+
+    parsed = parse_schedule(text)
+    if parsed is None:
+        # 有意图但解析不出时间/事件：Go 侧据此让 AI 回问，不能静默丢弃。
+        return ScheduleParseResponse(has_intent=True, need_clarify=True)
+
+    return ScheduleParseResponse(
+        has_intent=True,
+        need_clarify=False,
+        content=parsed.content,
+        remind_at=parsed.remind_at,
     )
