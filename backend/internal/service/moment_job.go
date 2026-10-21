@@ -74,10 +74,14 @@ func NewMomentJob(
 // Run 阻塞运行生成循环，监听 ctx.Done() 退出。
 // 在 cmd/server/main.go 里 go job.Run(ctx) 启动。
 func (j *MomentJob) Run(ctx context.Context) {
+	j.logger.Info("moment job started", zap.Duration("interval", j.interval))
+
+	// 启动后立刻扫一轮，不等第一个 tick：否则要等满一个 interval 才会产生首批动态。
+	// ticker 在这之后才创建，避免这次扫描耗时较长时积压出一个立即触发的 tick。
+	j.tick(ctx)
+
 	ticker := time.NewTicker(j.interval)
 	defer ticker.Stop()
-
-	j.logger.Info("moment job started", zap.Duration("interval", j.interval))
 
 	for {
 		select {
