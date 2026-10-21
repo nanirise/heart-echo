@@ -50,7 +50,9 @@ func main() {
 	// 主动消息与日程提醒都是「注入 [nudge] → 走正常聊天链路」，共用同一个 ChatService：
 	// 落库 / 取历史的逻辑只有一份，两条链路不会各自演化出不同行为。
 	// 注意 router.go 的请求链路仍会另建一套（两边无共享状态，各自的连接池互不影响）。
-	jobChat := service.NewChatService(db, service.NewAIClient(cfg.AI))
+	// 三个定时任务共用这一个 AI 客户端：它持有连接池，多建一个只是多一份连接。
+	aiClient := service.NewAIClient(cfg.AI)
+	jobChat := service.NewChatService(db, aiClient)
 	proactiveSvc := service.NewProactiveService(db, jobChat)
 	scheduleSvc := service.NewScheduleService(db, jobChat)
 	proactiveJob := service.NewProactiveJob(proactiveSvc, cfg.ProactiveJobInterval, appLogger)
@@ -58,11 +60,12 @@ func main() {
 	go proactiveJob.Run(jobCtx)
 	go scheduleJob.Run(jobCtx)
 
-	// 朋友圈动态生成（阶段一模板生成，不依赖 ai-service）；
-	// 没有手动触发入口，动态只由本任务产生（AGENTS §4.6 / §7.5）。
+	// 朋友圈动态生成：MOMENT_GENERATOR=ai（默认）优先让 ai-service 生成，
+	// 失败自动回退模板；=template 时完全不走 AI，用于调试或应急降级。
+	// 没有手动触发入口（AGENTS §4.6 / §7.5）。
 	momentJob := service.NewMomentJob(
 		db,
-		service.NewTemplateGenerator(),
+		service.NewMomentGenerator(cfg.MomentGenerator, aiClient, appLogger),
 		cfg.MomentJobInterval,
 		appLogger,
 	)
