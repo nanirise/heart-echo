@@ -578,7 +578,7 @@ type CreateCommentRequest struct {
 
 ### 6.3 `ContentGenerator` 接口定义（**核心交接物**）
 
-TECH_DESIGN §5.5 写的是"定时任务触发 Agent 生成一条动态"，但 **`ai-service/` 目录当前不存在**。因此把"生成"抽象成一个接口，阶段一用模板实现，阶段二换 HTTP 调用——符合 AGENTS §4.7「阶段一/阶段二接口不变只换实现」：
+TECH_DESIGN §5.5 写的是"定时任务触发 Agent 生成一条动态"。实现上把"生成"抽象成一个接口，阶段一用模板实现，阶段二换 HTTP 调用——符合 AGENTS §4.7「阶段一/阶段二接口不变只换实现」：
 
 ```go
 // ContentGenerator 产出动态正文。阶段一是模板，阶段二换成调 ai-service，调用方（moment_job）不改。
@@ -589,6 +589,7 @@ type ContentGenerator interface {
 type GenerateInput struct {
 	Persona      model.Persona
 	RecentEvents []string // 该人设近期 event 类记忆（user_memory.memory_type = 'event'）
+	Context      string   // 调用方拼好的近期互动摘要（最近聊天 + 事件记忆），供 AI 实现使用
 }
 
 type Generated struct {
@@ -612,41 +613,51 @@ type Generated struct {
 
 | 项 | 做法 |
 |----|------|
-| 调用 | `POST {AI_SERVICE_URL}/internal/moment/generate`，带 `X-Internal-Token`（值 = `AI_SERVICE_TOKEN`，两边必须一致） |
-| 请求体 | `{ personaId, name, personalityDesc, speakingStyle, recentEvents }` |
-| 响应体 | `{ content, emotionLabel }` |
-| prompt | 注入该 AI 的人设 + 最近对话提取的"生活事件"（TECH_DESIGN §5.5 的动态生成 Prompt 要点） |
-| **前置条件** | 需要 `ai-service` 先提供该内部端点（属 ai-service 分支） |
+| 调用 | `POST {AI_SERVICE_URL}/moment/generate`，带 `X-Internal-Token`（值 = `AI_SERVICE_TOKEN`，两边必须一致） |
+| 请求体 | `{ name, personality_desc, speaking_style, context }`；`context` 由 Go 侧从最近聊天 + 事件记忆拼好，Python 侧不连数据库 |
+| 响应体 | 仅 `{ content }`，必须是朋友圈正文（20-50 字），不含解释或前缀 |
+| prompt | 注入该 AI 的人设 + 最近互动摘要（TECH_DESIGN §5.5 的动态生成 Prompt 要点） |
+| **前置条件** | `ai-service` 已提供该内部端点（`app/moments/`，不是第 4 个 Agent） |
+
+**`emotion_label` 的归属**：AI 档响应里**没有**情绪字段（情绪是内部信号，AGENTS §4.4）。因此 AI 档落库时 `ai_moments.emotion_label` 为 `NULL`；只有 Go 侧模板兜底时，才由 `TemplateGenerator` 按命中槽位写入。前端与响应体在任何情况下都拿不到 `emotion_label`。
 
 **切换方式**：工厂 + 环境变量，沿用 `EMOTION_BACKEND` / `MEMORY_BACKEND` 的既有模式：
 
 ```
-MOMENT_GENERATOR=template | ai     # 默认 template
+MOMENT_GENERATOR=ai | template     # 默认 ai
 ```
+
+| 取值 | 行为 |
+|------|------|
+| `ai`（默认） | 先调 ai-service；网络错误 / 超时 / 非 200 / 空正文一律回退模板 |
+| `template` | 纯模板，**完全不调 AI**，用于调试或应急降级 |
+
+未配置或空值按 `ai` 处理：漏配环境变量时不能静默退回模板。
 
 **降级**：`ai` 档调用失败时回退模板实现并记日志（保证定时任务不会因 AI 抖动而空转）。
 
 **交接清单**（给 `feature/backend-moment-job`）：
 
-- [ ] `ai-service` 提供 `POST /internal/moment/generate`（否则只能停在 template 档）
-- [ ] `MOMENT_GENERATOR` 开关加入 `backend/.env.example`（与 `ai-service/.env.example` 同步）
-- [ ] 工厂函数与两个实现分文件，`moment_job.go` 只依赖接口
-- [ ] 单测：模板档不依赖外部服务；`ai` 档用 httptest 打桩
+- [x] `ai-service` 提供 `POST /moment/generate`（`app/moments/moment_agent.py` + `app/api/routes.py`）
+- [x] `MOMENT_GENERATOR` 开关加入 `backend/.env.example`（与 `ai-service/.env.example`、`deploy/.env.example` 同步）
+- [x] 工厂函数与两个实现分文件，`moment_job.go` 只依赖接口
+- [x] 单测：模板档不依赖外部服务；`ai` 档用 httptest 打桩（含降级、超时、空正文）
 
 ### 6.4 节流（不加新列）
 
-`ai_moments` 没有 `last_moment_at` 列，也不该为节流加。判断"这个人设最近刚发过"：
+`ai_moments` 没有 `last_moment_at` 列，也不该为节流加。生成前按两条强约束判断，任一命中即跳过该人设：
 
-```sql
-SELECT max(created_at) FROM ai_moments WHERE persona_id = ?
-```
+| 约束 | 判断 | 日志 reason |
+|------|------|-------------|
+| 单人设每日上限 5 条 | `CountTodayMoments`：`created_at >= +08:00 当日零点`，必须带 `user_id + persona_id` 双条件 | `daily_limit_reached` |
+| 两条动态间隔 ≥ 3 小时 | `GetRecentMomentTime` 取 `MAX(created_at)`，`now - last < 3h` 即跳过 | `min_interval_not_reached` |
 
-正好走 `idx_moments_persona_time(persona_id, created_at DESC)` 首列反向扫描，成本极低。阈值复用 `MOMENT_JOB_INTERVAL`。
+日界用固定 `+08:00`（`repository.todayMidnight`），不跟随进程时区。`MAX(created_at)` 正好走 `idx_moments_persona_time(persona_id, created_at DESC)` 首列反向扫描，成本极低。`MOMENT_JOB_INTERVAL` 只决定扫描频率，**不再**充当节流阈值。
 
 ### 6.5 一次 tick 的顺序
 
 1. `ListGenerationCandidates` 取一批人设（§4.5 唯一合法的跨用户方法）；
-2. 逐个用 §6.4 节流跳过"刚发过"的；
+2. 逐个用 §6.4 的两条频率约束跳过（先日上限、后最小间隔）；
 3. `generator.Generate(...)` 产出 `content`（+ 可空 `emotion_label`）；
 4. 落 `ai_moments`；
 5. 按概率从**同一 `user_id` 的其他人设**里挑评论者，写入 `moment_comments`（`persona_id` 非空、`user_id` 为 NULL）。
@@ -724,7 +735,7 @@ CREATE INDEX idx_likes_user ON moment_likes(user_id);
 | # | 事项 | 本文的倾向 | 影响 |
 |---|------|-----------|------|
 | 1 | 阶段一的动态正文是否就用模板（`ContentGenerator` 的 template 档） | 是 | 不定则 `moment_job` 落不了地 |
-| 2 | `ai-service` 何时提供 `POST /internal/moment/generate` | —— | 决定阶段二能否开工 |
+| 2 | `ai-service` 何时提供 `POST /moment/generate` | 已提供（`app/moments/` + `routes.py`） | 阶段二可开工 |
 
 ---
 

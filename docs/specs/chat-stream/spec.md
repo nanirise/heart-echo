@@ -121,7 +121,7 @@ Go → Python 的请求体是 **snake_case**（`user_id` / `persona_id` / `messa
 
 `/internal/chat/stream`、`/internal/emotion/analyze`、`/internal/memory/extract`、`/internal/schedule/parse`（后三个归 Week 3 / P1，本 spec 只定命名）。
 
-前缀的作用是**让"只给 Go 调"这件事写在路径上**。与成员 3 的 `ai-moment/spec.md:615`（`/internal/moment/generate`）对齐。
+前缀的作用是**让"只给 Go 调"这件事写在路径上**。与成员 3 的 `ai-moment/spec.md:616`（`/moment/generate`，靠 `X-Internal-Token` 鉴权）对齐。
 
 > ⚠️ 这条与 [成员 1 任务书 §6](../../dev/MEMBER_1_BACKEND_AI.md) 现在的写法（`/chat/stream`）不一致，任务书需同步改。
 
