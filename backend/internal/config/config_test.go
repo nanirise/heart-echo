@@ -52,8 +52,41 @@ func TestLoadRejectsNonPositiveProactiveJobInterval(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsUnknownMomentGenerator(t *testing.T) {
+	// 拼错档位时启动即失败，避免静默跑在某一档上而不自知
+	setRequired(t, strings.Repeat("a", jwtSecretMinLength))
+	t.Setenv("MOMENT_GENERATOR", "a1")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("MOMENT_GENERATOR 取值非法时必须报错")
+	}
+	if !strings.Contains(err.Error(), "MOMENT_GENERATOR") {
+		t.Errorf("错误信息应含字段名 MOMENT_GENERATOR，实际: %v", err)
+	}
+}
+
+func TestLoadAcceptsMomentGeneratorModes(t *testing.T) {
+	for _, mode := range []string{MomentGeneratorAI, MomentGeneratorTemplate} {
+		t.Run(mode, func(t *testing.T) {
+			setRequired(t, strings.Repeat("a", jwtSecretMinLength))
+			t.Setenv("MOMENT_GENERATOR", mode)
+
+			cfg, err := Load()
+			if err != nil {
+				t.Fatalf("MOMENT_GENERATOR=%s 应被接受: %v", mode, err)
+			}
+			if cfg.MomentGenerator != mode {
+				t.Errorf("MomentGenerator = %q, want %q", cfg.MomentGenerator, mode)
+			}
+		})
+	}
+}
+
 func TestLoadUsesDefaults(t *testing.T) {
 	setRequired(t, strings.Repeat("a", jwtSecretMinLength))
+	// 显式清空，避免运行测试的 shell 里恰好设了这个变量
+	t.Setenv("MOMENT_GENERATOR", "")
 
 	cfg, err := Load()
 	if err != nil {
@@ -72,6 +105,10 @@ func TestLoadUsesDefaults(t *testing.T) {
 	}
 	if len(cfg.Server.CORSAllowOrigins) != 1 || cfg.Server.CORSAllowOrigins[0] != "http://localhost:5173" {
 		t.Errorf("CORSAllowOrigins 解析不对: %v", cfg.Server.CORSAllowOrigins)
+	}
+	// 朋友圈默认走 AI，漏配时不能退回模板（否则新动态全是套话）
+	if cfg.MomentGenerator != MomentGeneratorAI {
+		t.Errorf("MomentGenerator = %q, want %q", cfg.MomentGenerator, MomentGeneratorAI)
 	}
 }
 

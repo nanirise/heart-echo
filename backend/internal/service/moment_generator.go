@@ -18,6 +18,9 @@ type ContentGenerator interface {
 type GenerateInput struct {
 	Persona      model.Persona
 	RecentEvents []string // 该人设近期的 event 类记忆，可为空
+	// Context 是调用方拼好的近期互动摘要（聊天记录 + 事件记忆），
+	// 供 AI 实现使用；模板实现不依赖它。
+	Context string
 }
 
 // Generated 是生成结果。EmotionLabel 是内部信号，只决定生成语气，绝不进响应体（AGENTS §4.4）。

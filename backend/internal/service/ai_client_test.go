@@ -232,6 +232,64 @@ func TestStoreMemoriesUnavailable(t *testing.T) {
 	}
 }
 
+// TestGenerateMoment 钉住 Go → Python 的朋友圈生成契约：字段 snake_case，
+// 上下文由 Go 侧拼好，响应只取 content。
+func TestGenerateMoment(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/moment/generate" {
+			t.Errorf("请求应为 POST /moment/generate，实际 %s %s", r.Method, r.URL.Path)
+		}
+		if got := r.Header.Get("X-Internal-Token"); got != "test-token" {
+			t.Errorf("X-Internal-Token 应为 test-token，实际 %q", got)
+		}
+		var body MomentRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("请求体解析失败: %v", err)
+		}
+		if body.Name != "小回" || body.PersonalityDesc != "温柔" ||
+			body.SpeakingStyle != "简短" || body.Context != "用户：今天好累" {
+			t.Errorf("请求字段错误: %+v", body)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"content":"今天风很轻。"}`))
+	}))
+	defer server.Close()
+
+	client := &aiHTTPClient{baseURL: server.URL, token: "test-token", http: server.Client()}
+	got, err := client.GenerateMoment(context.Background(), MomentRequest{
+		Name:            "小回",
+		PersonalityDesc: "温柔",
+		SpeakingStyle:   "简短",
+		Context:         "用户：今天好累",
+	})
+	if err != nil {
+		t.Fatalf("GenerateMoment 不应失败: %v", err)
+	}
+	if got != "今天风很轻。" {
+		t.Errorf("content 应为 %q，实际 %q", "今天风很轻。", got)
+	}
+}
+
+// TestGenerateMomentUnavailable 锁定非 200 的归类：调用方据此回退模板，
+// 错误码不能退化成 5000。
+func TestGenerateMomentUnavailable(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	client := &aiHTTPClient{baseURL: server.URL, token: "test-token", http: server.Client()}
+
+	_, err := client.GenerateMoment(context.Background(), MomentRequest{Name: "小回"})
+	if err == nil {
+		t.Fatal("非 200 应返回错误")
+	}
+	var bizErr *errcode.BizError
+	if !errors.As(err, &bizErr) || bizErr.Code != errcode.ErrAIUnavailable {
+		t.Fatalf("错误码应为 %d，实际 %v", errcode.ErrAIUnavailable, err)
+	}
+}
+
 // TestParseScheduleUnavailable 锁定非 200 的归类：调用方虽然只记日志，
 // 但错误码不能退化成 5000，否则日志里分不清「AI 服务挂了」与「解析结果有问题」。
 func TestParseScheduleUnavailable(t *testing.T) {

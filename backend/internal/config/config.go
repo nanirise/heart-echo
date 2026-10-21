@@ -13,9 +13,16 @@ import (
 	"github.com/joho/godotenv"
 )
 
-// jwtSecretMinLength 是 JWT_SECRET 的最短长度。
-// AGENTS §4.3 的硬性要求：太短的密钥让 HS256 签名可被暴力破解。
-const jwtSecretMinLength = 32
+const (
+	// jwtSecretMinLength 是 JWT_SECRET 的最短长度。
+	// AGENTS §4.3 的硬性要求：太短的密钥让 HS256 签名可被暴力破解。
+	jwtSecretMinLength = 32
+
+	// MomentGeneratorAI 优先调用 ai-service 生成朋友圈，失败回退模板。
+	MomentGeneratorAI = "ai"
+	// MomentGeneratorTemplate 完全不走 AI，只跑模板（调试 / 应急降级）。
+	MomentGeneratorTemplate = "template"
+)
 
 // Config 是全部配置的总入口，四个分组各管一摊。
 type Config struct {
@@ -29,6 +36,10 @@ type Config struct {
 
 	// MomentJobInterval 是朋友圈动态生成的周期；同时用作同一人设的节流阈值（ai-moment spec §6.4）
 	MomentJobInterval time.Duration `env:"MOMENT_JOB_INTERVAL" envDefault:"30m"`
+
+	// MomentGenerator 是朋友圈生成器档位：ai（默认，调 ai-service，失败回退模板）
+	// / template（纯模板，调试或应急降级用）。
+	MomentGenerator string `env:"MOMENT_GENERATOR" envDefault:"ai"`
 }
 
 // ServerConfig 是 HTTP 服务本身的配置。
@@ -110,6 +121,15 @@ func (c Config) validate() error {
 		return fmt.Errorf(
 			"config: MOMENT_JOB_INTERVAL must be positive, got %s",
 			c.MomentJobInterval,
+		)
+	}
+	// 拼错时启动即失败，避免静默退回某一档（Python 侧用 Literal 表达同一约束）
+	switch c.MomentGenerator {
+	case MomentGeneratorAI, MomentGeneratorTemplate:
+	default:
+		return fmt.Errorf(
+			"config: MOMENT_GENERATOR must be %q or %q, got %q",
+			MomentGeneratorAI, MomentGeneratorTemplate, c.MomentGenerator,
 		)
 	}
 	return nil

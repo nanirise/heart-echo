@@ -218,6 +218,22 @@ func (r *MomentRepo) ListAllPersonasForJob(ctx context.Context) ([]model.Persona
 	return list, err
 }
 
+// CountTodayMoments 数该人设今天（+08:00 零点起）已发布的动态条数，供每日上限判定。
+// 日界复用仓库内的 todayMidnight：固定 +08:00，不跟随进程时区。
+// 双条件不可省：persona_id 隔离人设，user_id 是越权防线（AGENTS §4.3）。
+func (r *MomentRepo) CountTodayMoments(
+	ctx context.Context, userID, personaID uint64,
+) (int64, error) {
+	var n int64
+	err := r.db.WithContext(ctx).
+		Table("ai_moments AS m").
+		Joins("JOIN personas p ON p.id = m.persona_id").
+		Where("m.persona_id = ? AND p.user_id = ? AND m.created_at >= ?",
+			personaID, userID, todayMidnight()).
+		Count(&n).Error
+	return n, err
+}
+
 // GetRecentMomentTime 返回该人设最近一条动态的时间；从未发过时返回 nil。
 // 只按 persona_id 查：调用方是系统级任务，且返回值不回给任何用户。
 func (r *MomentRepo) GetRecentMomentTime(
@@ -247,6 +263,25 @@ func (r *MomentRepo) ListOtherPersonasInSameAccount(
 	var list []model.Persona
 	err := r.db.WithContext(ctx).
 		Where("user_id = ? AND id <> ?", userID, excludePersonaID).
+		Find(&list).Error
+	return list, err
+}
+
+// ListRecentMessagesByPersona 取该人设最近的聊天记录（倒序，最新在前），
+// 供定时任务给 AI 拼朋友圈上下文。
+//
+// 两个条件都带：persona_id 隔离人设，user_id 是越权防线（AGENTS §4.3）。
+// 过滤 is_nudge：主动消息注入的 "[nudge]" 是系统标记，不是用户说的话，
+// 喂给模型只会让它以为用户真发了这两个词。
+func (r *MomentRepo) ListRecentMessagesByPersona(
+	ctx context.Context, userID, personaID uint64, limit int,
+) ([]model.ChatMessage, error) {
+	list := make([]model.ChatMessage, 0, limit)
+	err := r.db.WithContext(ctx).Model(&model.ChatMessage{}).
+		Where("persona_id = ? AND user_id = ? AND is_nudge = ?",
+			personaID, userID, false).
+		Order("created_at DESC, id DESC").
+		Limit(limit).
 		Find(&list).Error
 	return list, err
 }

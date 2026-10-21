@@ -108,8 +108,19 @@ type MemoryStoreItem struct {
 	ImportanceScore float64 `json:"importance_score"`
 }
 
+// MomentRequest 是 Go → Python 的朋友圈生成请求（TECH_DESIGN §5.5）。
+//
+// Context 是 Go 侧拼好的近期互动摘要：Python 不连数据库，拿不到聊天记录与记忆。
+// 字段名沿用 PersonaBrief 的 snake_case，与内部接口保持一致。
+type MomentRequest struct {
+	Name            string `json:"name"`
+	PersonalityDesc string `json:"personality_desc"`
+	SpeakingStyle   string `json:"speaking_style"`
+	Context         string `json:"context"`
+}
+
 // AIClient 是 Go 侧调用 Python AI 服务的唯一出入口。
-// 只放已经落地的内部端点：流式对话、日程解析、记忆提取、向量写入。
+// 只放已经落地的内部端点：流式对话、日程解析、记忆提取、向量写入、朋友圈生成。
 type AIClient interface {
 	// StreamChat 发起一次流式生成。
 	//
@@ -133,6 +144,12 @@ type AIClient interface {
 	StoreMemories(
 		ctx context.Context, userID, personaID uint64, memories []MemoryStoreItem,
 	) (int, error)
+
+	// GenerateMoment 结合人设与近期互动生成一条朋友圈正文。
+	//
+	// 返回的正文可能为空（ai-service 200 + 空串），调用方必须再判一次；
+	// 任何失败都由调用方回退模板，朋友圈不能断更。
+	GenerateMoment(ctx context.Context, req MomentRequest) (string, error)
 }
 
 type aiHTTPClient struct {
@@ -382,6 +399,46 @@ func (c *aiHTTPClient) StoreMemories(
 		return 0, errcode.Wrap(errcode.ErrInternal, err)
 	}
 	return payload.Stored, nil
+}
+
+// GenerateMoment 调用 ai-service 的朋友圈生成端点（TECH_DESIGN §5.5）。
+//
+// 非 200 统一归为 ErrAIUnavailable：调用方只关心"这次没成"，随后回退模板。
+func (c *aiHTTPClient) GenerateMoment(
+	ctx context.Context, req MomentRequest,
+) (string, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return "", errcode.Wrap(errcode.ErrInternal, err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(
+		ctx, http.MethodPost, c.baseURL+"/moment/generate", bytes.NewReader(body),
+	)
+	if err != nil {
+		return "", errcode.Wrap(errcode.ErrInternal, err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("X-Internal-Token", c.token)
+
+	resp, err := c.http.Do(httpReq)
+	if err != nil {
+		return "", errcode.Wrap(errcode.ErrAIUnavailable, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", errcode.Wrap(
+			errcode.ErrAIUnavailable, fmt.Errorf("ai-service status %d", resp.StatusCode),
+		)
+	}
+
+	var payload struct {
+		Content string `json:"content"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return "", errcode.Wrap(errcode.ErrInternal, err)
+	}
+	return payload.Content, nil
 }
 
 // splitSSEBlock 按 \n\n 切块，切出来的内容不含结尾那两个换行。

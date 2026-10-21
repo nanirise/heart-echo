@@ -5,11 +5,12 @@ from collections.abc import AsyncIterator
 from datetime import datetime
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.agents.memory_agent import build_memory_extractor
+from app.moments.moment_agent import generate_moment
 from app.core.config import get_settings
 from app.core.llm_client import LLMUnavailableError, stream_reply
 from app.core.security import verify_internal_token
@@ -147,6 +148,27 @@ class MemoryStoreResponse(BaseModel):
     """stored=0 表示当前是 recent 档（未写向量库），不是错误。"""
 
     stored: int
+
+
+class MomentGenerateRequest(BaseModel):
+    """Go → Python 的朋友圈生成请求（TECH_DESIGN §5.5）。
+
+    只收人设三字段与 Go 侧拼好的近期互动摘要；本服务不连数据库，
+    也不该知道这条动态属于谁。
+    """
+
+    name: str = ""
+    personality_desc: str = ""
+    speaking_style: str = ""
+    context: str = ""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class MomentGenerateResponse(BaseModel):
+    """动态正文。只有这一个字段：情绪是内部信号，不进跨服务契约（AGENTS §4.4）。"""
+
+    content: str
 
 
 @router.get("/health")
@@ -333,3 +355,29 @@ async def store_memories(req: MemoryStoreRequest) -> MemoryStoreResponse:
     # 与检索同一个理由：客户端构造与 embedding 都是阻塞的。
     stored = await asyncio.to_thread(store_sync)
     return MemoryStoreResponse(stored=stored)
+
+
+@router.post("/moment/generate", dependencies=[Depends(verify_internal_token)])
+async def generate_moment_endpoint(
+    req: MomentGenerateRequest,
+) -> MomentGenerateResponse:
+    """按人设与近期互动生成一条朋友圈正文（TECH_DESIGN §5.5）。
+
+    生成失败返回 503：Go 侧只看状态码是否 200，非 200 一律回退模板，
+    所以这里不需要把 LLM 的原始错误透出去。
+    """
+    try:
+        content = await generate_moment(
+            context=req.context,
+            name=req.name,
+            personality=req.personality_desc,
+            speaking_style=req.speaking_style,
+        )
+    except LLMUnavailableError as exc:
+        logger.warning("moment generation failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="moment generation unavailable",
+        ) from exc
+
+    return MomentGenerateResponse(content=content)
