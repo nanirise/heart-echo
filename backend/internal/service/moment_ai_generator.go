@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -85,6 +86,7 @@ func (g *AIGenerator) Generate(ctx context.Context, in GenerateInput) (Generated
 		err = errEmptyMomentContent
 	}
 
+	fmt.Printf("【朋友圈降级报警】AI 生成失败，原因: %v\n", err)
 	g.logger.Warn("moment ai generation failed, falling back to template",
 		zap.Uint64("personaID", in.Persona.ID),
 		zap.Error(err))

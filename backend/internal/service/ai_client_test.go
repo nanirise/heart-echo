@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -242,8 +243,28 @@ func TestGenerateMoment(t *testing.T) {
 		if got := r.Header.Get("X-Internal-Token"); got != "test-token" {
 			t.Errorf("X-Internal-Token 应为 test-token，实际 %q", got)
 		}
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("读取请求体失败: %v", err)
+		}
+		// 按 Python Pydantic 模型的字段名逐字校验：模型是 extra="forbid"，
+		// 拼错或多数一个字段都会 422。解到 MomentRequest 自身发现不了标签写错。
+		var keys map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &keys); err != nil {
+			t.Errorf("请求体解析失败: %v", err)
+		}
+		wantKeys := []string{"name", "personality_desc", "speaking_style", "context"}
+		if len(keys) != len(wantKeys) {
+			t.Errorf("请求体应恰好 %d 个字段，实际 %d 个: %s", len(wantKeys), len(keys), raw)
+		}
+		for _, key := range wantKeys {
+			if _, ok := keys[key]; !ok {
+				t.Errorf("请求体缺少字段 %q: %s", key, raw)
+			}
+		}
+
 		var body MomentRequest
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		if err := json.Unmarshal(raw, &body); err != nil {
 			t.Errorf("请求体解析失败: %v", err)
 		}
 		if body.Name != "小回" || body.PersonalityDesc != "温柔" ||
