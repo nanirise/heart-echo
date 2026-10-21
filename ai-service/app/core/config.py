@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     # 用 Literal 而不是 str：拼错时服务启动即失败，不会静默退回规则档。
     memory_extract_backend: Literal["rule", "llm"] = "rule"
 
+    # 朋友圈生成器档位：ai（默认，调本服务生成）/ template（纯模板）。
+    # 实际选择发生在 Go 的装配处；这里保留同名字段，保证两个服务的 .env 可逐项对照。
+    moment_generator: Literal["ai", "template"] = "ai"
+
     # 记忆召回（TECH_DESIGN §5.3 阶段二）：recent 保持既有行为，vector 走 ChromaDB。
     # 默认 recent 是升级纪律要求的回退档；演示时改 vector（AGENTS §4.7）。
     memory_backend: Literal["recent", "vector"] = "recent"

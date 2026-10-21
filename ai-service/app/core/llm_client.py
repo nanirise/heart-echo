@@ -116,26 +116,29 @@ def build_client() -> AsyncOpenAI:
     )
 
 
-async def complete_json(system_prompt: str, user_prompt: str) -> str:
-    """非流式调用，要求模型返回一个 JSON 对象（记忆提取用）。
-
-    response_format 只是提示而不是保证：调用方仍要自己 json.loads 并校验字段。
-    失败与流式生成同样收口成 LLMUnavailableError —— 调用方只关心"这次调用没成"。
-    """
+async def _complete(
+    system_prompt: str,
+    user_prompt: str,
+    *,
+    response_format: dict[str, str] | None = None,
+) -> str:
+    """非流式调用，取首个 choice 的文本；所有失败收口成 LLMUnavailableError。"""
     settings = get_settings()
     client = build_client()
 
+    request: dict[str, object] = {
+        "model": settings.deepseek_model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "max_tokens": settings.llm_max_tokens,
+    }
+    if response_format is not None:
+        request["response_format"] = response_format
+
     try:
-        response = await client.chat.completions.create(
-            model=settings.deepseek_model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            # 提示模型输出纯 JSON；DeepSeek 要求 prompt 里出现 "JSON" 字样才启用。
-            response_format={"type": "json_object"},
-            max_tokens=settings.llm_max_tokens,
-        )
+        response = await client.chat.completions.create(**request)
     except Exception as exc:
         logger.warning("DeepSeek call failed: %s", exc)
         raise LLMUnavailableError(str(exc)) from exc
@@ -146,6 +149,22 @@ async def complete_json(system_prompt: str, user_prompt: str) -> str:
     if not content:
         raise LLMUnavailableError("DeepSeek returned empty content")
     return content
+
+
+async def complete_json(system_prompt: str, user_prompt: str) -> str:
+    """非流式调用，要求模型返回一个 JSON 对象（记忆提取用）。
+
+    response_format 只是提示而不是保证：调用方仍要自己 json.loads 并校验字段。
+    """
+    # 提示模型输出纯 JSON；DeepSeek 要求 prompt 里出现 "JSON" 字样才启用。
+    return await _complete(
+        system_prompt, user_prompt, response_format={"type": "json_object"}
+    )
+
+
+async def complete_text(system_prompt: str, user_prompt: str) -> str:
+    """非流式调用，返回纯文本（朋友圈动态生成用）。"""
+    return await _complete(system_prompt, user_prompt)
 
 
 async def stream_reply(
