@@ -457,16 +457,26 @@ function handlePasswordChanged(): void {
   width: 100%;
 }
 
+/*
+ * 固定 5 列而不是 flex-wrap：预设是 10 个，flex 在 480px 内容宽里只会排成
+ * 8 + 2 —— 第二行孤零零两个，比整齐的两行难看。5 列 × 44px + 4 × 12px = 268px，
+ * 窄屏（375px）也放得下，不需要额外断点。
+ */
 .avatar-presets {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(5, 44px);
+  gap: 12px;
 }
 
 .avatar-preset {
   width: 44px;
   height: 44px;
   padding: 0;
+  /*
+   * 全站没有全局 box-sizing: border-box，默认 content-box 下 44px + 2px 边框
+   * 会撑成 48px，网格列宽就对不上了。这里显式声明，让 44px 是含边框的总尺寸。
+   */
+  box-sizing: border-box;
   /*
    * 2px 边框一开始就占位，选中只改颜色。若改成「选中时才加 border」，
    * 圆心会偏移、后面几项也会被挤动一下。
