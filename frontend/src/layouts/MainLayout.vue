@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
 
+import AvatarBadge from '@/components/common/AvatarBadge.vue'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
@@ -33,7 +34,14 @@ function handleLogout(): void {
       </nav>
 
       <div class="user">
-        <span class="username">{{ authStore.user?.username ?? '未登录' }}</span>
+        <div class="user-identity">
+          <AvatarBadge
+            :src="authStore.user?.avatarUrl"
+            :name="authStore.user?.username"
+            :size="28"
+          />
+          <span class="username">{{ authStore.user?.username ?? '未登录' }}</span>
+        </div>
         <el-button size="small" @click="handleLogout">退出登录</el-button>
       </div>
     </aside>
@@ -92,7 +100,21 @@ function handleLogout(): void {
   padding: 0 var(--spacing-unit);
 }
 
+/*
+ * 头像与用户名同排，用户名再用省略号收尾。
+ * min-width: 0 是让这个 flex 子项能窄于内容宽度 —— 缺了它，长用户名会
+ * 顶宽侧栏，ellipsis 永远不触发。
+ */
+.user-identity {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-unit);
+  min-width: 0;
+}
+
 .username {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   font-size: var(--el-font-size-small);
   white-space: nowrap;
@@ -159,7 +181,10 @@ function handleLogout(): void {
     padding: 0;
   }
 
-  /* 窄屏空间要留给导航，用户名是纯噪音；退出按钮保留 */
+  /*
+   * 窄屏空间要留给导航：用户名是纯噪音，收起来。
+   * 头像留着 —— 它取代了原来那行用户名，宽度只多 28px，但一眼能看出是谁。
+   */
   .username {
     display: none;
   }
