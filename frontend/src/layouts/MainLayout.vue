@@ -1,11 +1,37 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+import type { Component } from 'vue'
+import { Cloudy, Moon, Star, Sunny } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 
 import AvatarBadge from '@/components/common/AvatarBadge.vue'
 import { useAuthStore } from '@/stores/auth'
+import { useThemeStore } from '@/stores/theme'
+import type { Theme } from '@/stores/theme'
 
 const router = useRouter()
 const authStore = useAuthStore()
+const themeStore = useThemeStore()
+
+/** 图标对应当前主题本身，点击后按 THEMES 顺序进入下一套 */
+const THEME_ICONS: Record<Theme, Component> = {
+  light: Sunny,
+  dark: Moon,
+  pain: Cloudy,
+  'custom-zhang': Star,
+}
+
+const THEME_LABELS: Record<Theme, string> = {
+  light: '亮色',
+  dark: '暗黑',
+  pain: '青春疼痛',
+  'custom-zhang': '私货',
+}
+
+const themeIcon = computed(() => THEME_ICONS[themeStore.theme])
+const themeToggleLabel = computed(
+  () => `当前主题：${THEME_LABELS[themeStore.theme]}，点击切换`,
+)
 
 const navItems = [
   { path: '/chat', label: '对话' },
@@ -42,7 +68,21 @@ function handleLogout(): void {
           />
           <span class="username">{{ authStore.user?.username ?? '未登录' }}</span>
         </div>
-        <el-button size="small" @click="handleLogout">退出登录</el-button>
+        <div class="user-actions">
+          <el-button size="small" @click="handleLogout">退出登录</el-button>
+          <el-button
+            size="small"
+            text
+            circle
+            :title="themeToggleLabel"
+            :aria-label="themeToggleLabel"
+            @click="themeStore.cycleTheme()"
+          >
+            <el-icon>
+              <component :is="themeIcon" />
+            </el-icon>
+          </el-button>
+        </div>
       </div>
     </aside>
 
@@ -98,6 +138,13 @@ function handleLogout(): void {
   flex-direction: column;
   gap: var(--spacing-unit);
   padding: 0 var(--spacing-unit);
+}
+
+/* 退出登录留在左、主题切换推到右侧，两者共用一行 */
+.user-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 /*
