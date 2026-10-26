@@ -24,6 +24,7 @@
   --color-text-secondary: #909399;
   --color-text-placeholder: #a8abb2;
   --color-bg: #ffffff;
+  --color-card-bg: #ffffff;
   --color-border: #dcdfe6;
 
   --border-radius-base: 6px;
@@ -85,10 +86,14 @@
  * `.el-card` 的默认值（圆角 4px、内边距 20px）覆盖 —— 写了等于没写。
  * 必须在 `.el-card` 上再声明一次。
  *
+ * 背景色同理：Element Plus 把 `--el-card-bg-color` 也定义在 `.el-card` 自身，
+ * 这里把它指回语义层，暗黑主题只改 `--color-card-bg` 一处即可。
+ *
  * `--el-card-padding` 的窄屏收紧由 @media 单独声明。
  */
 .el-card {
   --el-card-border-radius: var(--app-radius-card);
+  --el-card-bg-color: var(--color-card-bg);
 }
 
 body {
@@ -119,7 +124,7 @@ body {
  *
  * 变量本身不能写进 @media 条件（`@media (max-width: var(--x))` 不生效），
  * 但在 @media 内部重新赋值是允许的。`:root` 优先级相同、靠出现顺序覆盖，
- * 所以这一段必须留在文件末尾。
+ * 所以后面不能再出现改写 `--app-gutter` 的 `:root` 规则。
  *
  * 卡片内边距必须写在 `.el-card` 上，不能挂在 `:root`：Element Plus 把
  * `--el-card-padding` 定义在 `.el-card` 自己身上（theme-chalk/index.css），
@@ -134,4 +139,191 @@ body {
   .el-card {
     --el-card-padding: 16px;
   }
+}
+
+/*
+ * 暗黑主题。
+ *
+ * 由 <html class="dark"> 触发，class 的增删见 stores/theme.ts 与 App.vue。
+ * 本段必须排在 element-plus/theme-chalk/dark/css-vars.css 之后（见 main.ts）：
+ * 两边都是 `html.dark`，同优先级时后加载的胜出，这里才能改成自己的值。
+ *
+ * 只覆盖语义层和少数 Element Plus 变量，fill-color、shadow 等其余颜色
+ * 继续用 theme-chalk 的暗色变量，避免维护两份调色板。
+ */
+html.dark {
+  /* 覆盖 Element Plus 的变量（部分） */
+  --el-bg-color: #141414;
+  --el-text-color-primary: #e5e5e5;
+  --el-border-color: #333333;
+
+  /* 覆盖自己的全站自定义变量 */
+  --color-bg: #1a1a1a;
+  --color-text-main: #e0e0e0;
+  --color-text-secondary: #909090;
+  --color-border: #303030;
+  /* 卡片比页面底色稍浅，暗色下才有层次 */
+  --color-card-bg: #242424;
+}
+
+/*
+ * Element Plus 的 `html.dark .el-card` 先把卡片背景指到了 --el-bg-color-overlay，
+ * 优先级高于上面那条 `.el-card`。同优先级、后加载的这里才能改回语义层。
+ */
+html.dark .el-card {
+  --el-card-bg-color: var(--color-card-bg);
+}
+
+/* ================= 极简青春疼痛文学主题 ================= */
+html.theme-pain {
+  --font-family: 'Noto Sans SC', sans-serif;
+  --el-font-family: 'Noto Sans SC', sans-serif;
+  font-size: 16px;
+  line-height: 2.2;
+  letter-spacing: 0.5px;
+  --el-text-color-primary: #2c3e50;
+  --el-text-color-regular: #34495e;
+  --el-text-color-secondary: #5a738e;
+  --el-text-color-placeholder: #5a738e;
+  --el-color-primary: #e74c3c;
+  --el-bg-color: transparent;
+  --el-bg-color-overlay: rgba(255, 255, 255, 0.65);
+  --el-border-color: rgba(255, 255, 255, 0.4);
+  --el-border-color-light: rgba(255, 255, 255, 0.4);
+  --el-border-color-lighter: rgba(255, 255, 255, 0.3);
+  --el-border-radius-base: 12px;
+  --el-fill-color: rgba(255, 255, 255, 0.35);
+  --el-fill-color-light: rgba(255, 255, 255, 0.2);
+
+  /* 项目自己的语义变量也要对齐，否则自写组件还停在亮色值上 */
+  --color-primary: #e74c3c;
+  --color-text-main: #2c3e50;
+  --color-text-secondary: #5a738e;
+  --color-text-placeholder: #5a738e;
+  --color-border: rgba(255, 255, 255, 0.4);
+  --color-bg: transparent;
+  --color-card-bg: rgba(255, 255, 255, 0.65);
+  --border-radius-base: 12px;
+  --app-radius-card: 12px;
+}
+
+html.theme-pain body {
+  /* 换背景只改文件名：public/images/ 下的 bg1~bg7 都能直接用 */
+  background-image: url('/images/bg1.jpeg');
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+  background-color: #a2c0d6;
+  transition: background-image 1s ease-in-out;
+}
+
+html.theme-pain body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(30, 45, 60, 0.4), rgba(30, 45, 60, 0.2));
+  z-index: -1;
+  pointer-events: none;
+}
+
+html.theme-pain .el-main,
+html.theme-pain .chat-container,
+html.theme-pain .profile-container {
+  max-width: 680px;
+  margin: 0 auto;
+  padding-top: 40px;
+}
+
+/*
+ * 本项目没有上面那三个类名，用真实容器承接 680px 排版。
+ * 顶部留白不加在 .content 上：ChatView 的 100vh 高度没有把这 40px 算进去，
+ * 加了会让整页多滚一截。
+ */
+html.theme-pain .content {
+  max-width: 680px;
+  margin: 0 auto;
+}
+
+/* 聊天页没有卡片承载：左栏与对话头部补玻璃底，否则文字直接压在照片上 */
+html.theme-pain .persona-list,
+html.theme-pain .conversation-head,
+html.theme-pain .page-header {
+  background: rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(15px);
+  -webkit-backdrop-filter: blur(15px);
+  border-radius: var(--app-radius-card);
+}
+
+/* 人设 / 朋友圈 / 日程的页头同样在卡片外，补一点内边距更像玻璃纸 */
+html.theme-pain .page-header {
+  box-sizing: border-box;
+  padding: 12px 16px;
+}
+
+html.theme-pain .conversation-head {
+  box-sizing: border-box;
+  padding: 12px;
+  border-bottom: none;
+}
+
+html.theme-pain .persona-list {
+  border-right: none;
+}
+
+/* 侧栏背后是照片，补一层玻璃底保证导航文字可读 */
+html.theme-pain .sidebar {
+  background: rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(15px);
+  -webkit-backdrop-filter: blur(15px);
+  border-right-color: rgba(255, 255, 255, 0.4);
+}
+
+html.theme-pain .el-card,
+html.theme-pain .bubble,
+html.theme-pain .message-bubble,
+html.theme-pain .settings-card {
+  background: rgba(255, 255, 255, 0.65) !important;
+  backdrop-filter: blur(15px);
+  -webkit-backdrop-filter: blur(15px);
+  border: 1px solid rgba(255, 255, 255, 0.4) !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1) !important;
+  transition: transform 0.3s ease, background 0.3s ease;
+}
+
+html.theme-pain .el-card:hover {
+  transform: translateY(-4px);
+  background: rgba(255, 255, 255, 0.55) !important;
+}
+
+/* 标题换成宋体感的 Noto Serif SC，正文保持 Noto Sans SC */
+html.theme-pain .page-title,
+html.theme-pain .section-title,
+html.theme-pain .brand,
+html.theme-pain .conversation-name {
+  font-family: 'Noto Serif SC', serif;
+  font-weight: 600;
+  letter-spacing: 1px;
+}
+
+/* ================= 留给张瀚霖的私货主题接口 ================= */
+html.theme-zhang {
+  /*
+    张瀚霖，请在这里写你的 CSS 变量！
+    覆盖下面这几个 --el-*，整个项目（含 Element 组件和自写组件）就会变成你的专属主题。
+    要做深色方案的话，记得再补 --el-fill-color* 与阴影类变量。
+  */
+  --el-color-primary: #9b59b6; /* 占位色，请替换 */
+  --el-bg-color: #f4f4f9; /* 占位色，请替换 */
+  --el-bg-color-overlay: #ffffff; /* 卡片/弹层底色，请替换 */
+  --el-text-color-primary: #303133; /* 占位色，请替换 */
+  --el-text-color-secondary: #909399; /* 占位色，请替换 */
+  --el-border-color: #dcdfe6; /* 占位色，请替换 */
+
+  /* 桥接层：自写组件读的是 --color-*，这里让它们跟着上面的 --el-* 一起变 */
+  --color-primary: var(--el-color-primary);
+  --color-bg: var(--el-bg-color);
+  --color-card-bg: var(--el-bg-color-overlay);
+  --color-text-main: var(--el-text-color-primary);
+  --color-text-secondary: var(--el-text-color-secondary);
+  --color-border: var(--el-border-color);
 }

@@ -4,6 +4,28 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>HeartEcho</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=Noto+Serif+SC:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <script>
+      // 在首屏绘制前恢复主题，避免刷新时先闪一帧默认配色。
+      // 主题值到 class 的映射必须与 src/stores/theme.ts 保持一致。
+      try {
+        const themeClass = {
+          dark: 'dark',
+          pain: 'theme-pain',
+          'custom-zhang': 'theme-zhang',
+        }[localStorage.getItem('heart-echo-theme')]
+        if (themeClass) {
+          document.documentElement.classList.add(themeClass)
+        }
+      } catch {
+        // 浏览器禁用 localStorage 时按 light 处理
+      }
+    </script>
   </head>
   <body>
     <div id="app"></div>
