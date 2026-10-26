@@ -6,10 +6,12 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { toErrorMessage } from '@/api/error'
 import { PERSONA_PAGE_SIZE, listPersonas } from '@/api/persona'
 import { getPortrait } from '@/api/profile'
+import AvatarBadge from '@/components/common/AvatarBadge.vue'
 import { useAuthStore } from '@/stores/auth'
 import type { ProfilePatch } from '@/stores/auth'
 import type { Persona } from '@/types/persona'
 import type { PortraitResponse } from '@/types/profile'
+import { USER_AVATAR_PRESETS } from '@/utils/avatar'
 import { formatDateTime } from '@/utils/datetime'
 
 import PasswordDialog from './PasswordDialog.vue'
@@ -23,6 +25,8 @@ const submitting = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
 const passwordVisible = ref(false)
+/** 外链输入默认收起：预设点选是主路径，贴链接只是少数情况的后门 */
+const linkInputVisible = ref(false)
 
 const form = reactive({
   username: '',
@@ -39,19 +43,6 @@ const rules: FormRules<typeof form> = {
     { pattern: /^[A-Za-z0-9]{3,20}$/, message: '用户名需 3-20 位字母或数字', trigger: 'blur' },
   ],
 }
-
-/**
- * 空串会被 el-avatar 当成一个真实地址去请求，所以换成 undefined 表示「没有头像」，
- * 让它直接走兜底插槽。只判 null/undefined 是不够的 —— 输入框清空留下的是 ''。
- */
-const avatarSrc = computed<string | undefined>(() => {
-  const url = authStore.user?.avatarUrl
-
-  return url === null || url === undefined || url === '' ? undefined : url
-})
-
-/** 契约 §3.5：avatarUrl 传 null 清空时，前端用用户名首字母兜底 */
-const avatarFallback = computed(() => (authStore.user?.username ?? '?').charAt(0).toUpperCase())
 
 /* ---------- 画像区块：与人设绑定，一人设一份 ---------- */
 
@@ -298,9 +289,43 @@ function handlePasswordChanged(): void {
 
       <el-form v-else ref="formRef" :model="form" :rules="rules" label-position="top">
         <el-form-item label="头像">
-          <div class="avatar-row">
-            <el-avatar :size="64" :src="avatarSrc">{{ avatarFallback }}</el-avatar>
-            <el-input v-model="form.avatarUrl" placeholder="粘贴图片链接，留空则清除头像" />
+          <div class="avatar-picker">
+            <!--
+              预览跟着 form 走而不是 store：点完预设要立刻看到效果，
+              不必先保存再刷新。store 里是上一次保存成功的值。
+            -->
+            <AvatarBadge :src="form.avatarUrl" :name="form.username" :size="72" />
+
+            <div class="avatar-presets">
+              <button
+                v-for="(preset, index) in USER_AVATAR_PRESETS"
+                :key="preset"
+                type="button"
+                class="avatar-preset"
+                :class="{ 'is-active': preset === form.avatarUrl }"
+                :aria-label="`使用预设头像 ${index + 1}`"
+                @click="form.avatarUrl = preset"
+              >
+                <img :src="preset" alt="" />
+              </button>
+            </div>
+
+            <div class="avatar-actions">
+              <el-button link type="primary" @click="linkInputVisible = !linkInputVisible">
+                {{ linkInputVisible ? '收起链接输入' : '或粘贴图片链接' }}
+              </el-button>
+              <!-- 取消头像也走同一条路：清空 → buildPatch 转成 null 清库 -->
+              <el-button v-if="form.avatarUrl !== ''" link @click="form.avatarUrl = ''">
+                清除头像
+              </el-button>
+            </div>
+
+            <el-input
+              v-if="linkInputVisible"
+              v-model="form.avatarUrl"
+              placeholder="粘贴图片链接，留空则清除头像"
+              clearable
+            />
           </div>
         </el-form-item>
 
@@ -425,11 +450,65 @@ function handlePasswordChanged(): void {
   color: var(--el-text-color-secondary);
 }
 
-.avatar-row {
+.avatar-picker {
   display: flex;
+  flex-direction: column;
   gap: 12px;
-  align-items: center;
   width: 100%;
+}
+
+/*
+ * 固定 5 列而不是 flex-wrap：预设是 10 个，flex 在 480px 内容宽里只会排成
+ * 8 + 2 —— 第二行孤零零两个，比整齐的两行难看。5 列 × 44px + 4 × 12px = 268px，
+ * 窄屏（375px）也放得下，不需要额外断点。
+ */
+.avatar-presets {
+  display: grid;
+  grid-template-columns: repeat(5, 44px);
+  gap: 12px;
+}
+
+.avatar-preset {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  /*
+   * 全站没有全局 box-sizing: border-box，默认 content-box 下 44px + 2px 边框
+   * 会撑成 48px，网格列宽就对不上了。这里显式声明，让 44px 是含边框的总尺寸。
+   */
+  box-sizing: border-box;
+  /*
+   * 2px 边框一开始就占位，选中只改颜色。若改成「选中时才加 border」，
+   * 圆心会偏移、后面几项也会被挤动一下。
+   */
+  border: 2px solid transparent;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color 0.15s;
+}
+
+.avatar-preset img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.avatar-preset:hover {
+  border-color: var(--color-border);
+}
+
+.avatar-preset.is-active {
+  border-color: var(--color-primary);
+}
+
+.avatar-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .form-alert {
