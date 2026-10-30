@@ -468,3 +468,176 @@ html.theme-zhang .el-card {
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
 }
+
+/* ================= 私货主题：薄雾青 ================= */
+/*
+ * 「薄雾青」—— 薄荷青的天，冷白的光。
+ *
+ * 背景用的是 public/images/aqua/mist.jpg。两张素材里选了这一张：另一张平均亮度
+ * 147、灰调偏重且飘带铺满整个画面，白卡片压上去会脏；这张近白像素占近三成、
+ * 留白集中在上半部，当亮色底不会跟正文抢。主色 #17776f 是从画面里的
+ * #65ada7 / #8ccdc9 / #71a7b2 往深处压出来的 —— 原色太亮，白字压上去
+ * 只有 2:1 左右的对比度，按钮描字看不清。#17776f 对白字约 5.4:1。
+ *
+ * 与「星夜」对偶：这边是**亮色**，所以不用 color-scheme: dark，也不用补
+ * 那套深色 fill/shadow；要补的是反方向的东西 —— 遮罩色不能是纯黑，
+ * 阴影要带青灰，否则压在浅色照片上会发脏。
+ */
+html.theme-aqua {
+  color-scheme: light;
+
+  /* ---------- 底色 ---------- */
+  --el-bg-color: #ffffff;
+  --el-bg-color-page: #f2f8f8;
+  --el-bg-color-overlay: #ffffff; /* 弹层、下拉面板：这里必须不透明，玻璃感只留给卡片 */
+
+  /* ---------- 文字 ---------- */
+  --el-text-color-primary: #1c2b2e;
+  --el-text-color-regular: #3d5257;
+  --el-text-color-secondary: #607a7f;
+  --el-text-color-placeholder: #9aadb2;
+  --el-text-color-disabled: #c0ccce;
+
+  /* ---------- 描边 ---------- */
+  --el-border-color: #d5e3e3;
+  --el-border-color-light: #dfeaea;
+  --el-border-color-lighter: #e8f0f0;
+  --el-border-color-extra-light: #f0f6f6;
+  --el-border-color-dark: #bdd2d2;
+  --el-border-color-darker: #a6bfbf;
+
+  /* ---------- 填充 ---------- */
+  /* fill-color-light 是「对方消息气泡」的底色（MessageBubble 的 .row-theirs）。
+   * 取接近白值 #f2f8f8 时，气泡压在照片上完全看不出边界 —— 这里压到能分辨的一档。 */
+  --el-fill-color: #e2eeee;
+  --el-fill-color-light: #e6f1f1;
+  --el-fill-color-lighter: #f7fbfb;
+  --el-fill-color-extra-light: #fafcfc;
+  --el-fill-color-dark: #e0ebeb;
+  --el-fill-color-darker: #d3e2e2;
+  --el-fill-color-blank: #ffffff;
+
+  /* ---------- 主色：薄荷青 ---------- */
+  --el-color-primary: #17776f;
+  /*
+   * light-3/5/7/8 是 Element Plus 构建时用白色混出来的固定值，改主色不重算 ——
+   * 这里按「白色占比 30%/50%/70%/80%」逐档算好，否则 hover 会闪回默认蓝。
+   */
+  --el-color-primary-light-3: #5d9f9a;
+  --el-color-primary-light-5: #8bbbb7;
+  --el-color-primary-light-7: #b9d6d4;
+  --el-color-primary-light-8: #d0e4e2;
+  /* 我方消息气泡底色（MessageBubble 的 .row-mine）。不能取最浅那一档 #e8f1f1 ——
+   * 它和卡片白只差一点点，压在浅色照片上完全读不出「这是我的消息」。 */
+  --el-color-primary-light-9: #dceceb;
+  --el-color-primary-dark-2: #125f59;
+
+  /*
+   * ---------- 语义色 ----------
+   * 比素材里的粉彩压深一档：这几种色主要用在「实心按钮 + 白字」上，
+   * 直接取画面色（例如 #c98a3f）对白字只有 2.9:1，按钮上的字发虚。
+   * 下面四个基色对白字都在 4.6:1 以上。
+   */
+  --el-color-success: #2b7f5b;
+  --el-color-success-light-3: #6aa58c;
+  --el-color-success-light-9: #eaf2ef;
+  --el-color-danger: #c04d51;
+  --el-color-danger-light-3: #d38285;
+  --el-color-danger-light-9: #f9eded;
+  --el-color-warning: #9c6a26;
+  --el-color-warning-light-3: #b99767;
+  --el-color-warning-light-9: #f5f0e9;
+  --el-color-info: #587280;
+  --el-color-info-light-3: #8a9ca6;
+  --el-color-info-light-9: #eef1f2;
+
+  /*
+   * ---------- 遮罩与阴影 ----------
+   * 默认遮罩是 rgba(0,0,0,.5)，压在浅色照片上会突然发黑，改成带青的深灰。
+   * 阴影同理：纯黑投影在冷白底上显脏，掺一点青灰才像「雾气」。
+   */
+  --el-mask-color: rgba(20, 45, 45, 0.42);
+  --el-mask-color-extra-light: rgba(20, 45, 45, 0.18);
+  --el-box-shadow: 0 12px 32px 4px rgba(23, 58, 60, 0.08), 0 8px 20px rgba(23, 58, 60, 0.06);
+  --el-box-shadow-light: 0 0 12px rgba(23, 58, 60, 0.06);
+  --el-box-shadow-lighter: 0 0 6px rgba(23, 58, 60, 0.05);
+  --el-box-shadow-dark: 0 16px 48px 16px rgba(23, 58, 60, 0.12), 0 12px 32px rgba(23, 58, 60, 0.08);
+
+  /*
+   * 桥接层：自写组件读 --color-*。
+   * 每一条对应的 --el-* 都在上面给了字面量，解析到这里就停，不会绕回 :root
+   * 那条反向映射（--el-*: var(--color-*)）成环。
+   /*
+   * 唯一的例外是 --color-card-bg：卡片要透出底下的照片，取值与
+   * --el-bg-color-overlay 不同，所以单独给字面量而不是指过去。
+   * 86% 是实拍调出来的：72% 时背景近白区域的卡片完全没有边界，看着像一团雾。
+   */
+  --color-primary: var(--el-color-primary);
+  --color-bg: var(--el-bg-color-page);
+  --color-card-bg: rgba(255, 255, 255, 0.86);
+  --color-text-main: var(--el-text-color-primary);
+  --color-text-secondary: var(--el-text-color-secondary);
+  --color-text-placeholder: var(--el-text-color-placeholder);
+  --color-border: var(--el-border-color);
+}
+
+html.theme-aqua body {
+  background-image: url('/images/aqua/mist.jpg');
+  background-size: cover;
+  /*
+   * 素材是 1440×1902 的竖构图，宽屏上按宽度铺满后上下会被裁掉一半。
+   * 定在 10% 是为了让头部完整入画 —— 22% 时头顶正好被视口切掉，看起来像
+   * 「页面没加载完」。手机上本来就是竖屏，能看到完整构图。
+   */
+  background-position: center 10%;
+  background-attachment: fixed;
+  background-color: #eef6f6;
+}
+
+/*
+ * 提亮而不是压暗：照片顶部本来就是大片近白，底部是深色皮鞋和玻璃方块。
+ *
+ * 遮罩比星夜那套更重（0.58→0.90，那边是 0.52→0.80）：深色主题里文字自带
+ * 对比度，亮色主题是深字压浅底，底越花字越糊；而且对话页的消息气泡没有卡片
+ * 兜底，直接浮在照片上。不加重的话，右侧那排带文字的玻璃方块会从气泡缝里
+ * 透出来跟正文抢注意力。
+ */
+html.theme-aqua body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(248, 252, 252, 0.7), rgba(240, 248, 248, 0.9));
+  z-index: -1;
+  pointer-events: none;
+}
+
+/* 侧栏、聊天左栏、页头背后直接是插画，补一层玻璃底保文字可读 */
+html.theme-aqua .sidebar {
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-right-color: var(--el-border-color);
+}
+
+html.theme-aqua .persona-list,
+html.theme-aqua .conversation-head,
+html.theme-aqua .page-header {
+  background: rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+/*
+ * 卡片不用再写 --el-card-bg-color：全局 .el-card 已经指向 --color-card-bg，
+ * 而上面把它改成了 86% 白，跟着就透了。这里只补模糊、描边和投影。
+ *
+ * 描边必须写在 .el-card 上而不是 html.theme-aqua 里：--el-card-border-color
+ * 由 Element Plus 定义在 .el-card 自身，元素自己的声明优先于继承值。
+ * 没有这道边，卡片压在照片的近白区域时边缘会糊掉。
+ */
+html.theme-aqua .el-card {
+  --el-card-border-color: #cfe2e2;
+  box-shadow: 0 6px 24px rgba(23, 58, 60, 0.07);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
