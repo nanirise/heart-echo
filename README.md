@@ -1,10 +1,13 @@
 # HeartEcho · AI 情感陪伴
 
 > 精弘网络技术部试用期大作业 · 开放选题 · 三人团队 · 4 周开发周期
+> **当前版本：v2.0.0（已封版）** ｜ 发版说明见 [CHANGELOG.md](CHANGELOG.md) ｜ 状态核对 2026-10-30
 
 一个前后端分离的 AI 情感陪伴 Web 应用。核心特征是**"像真人一样"的 AI 伴侣**——有记忆、有情绪、有主动行为、能自行演化人格、能发朋友圈并与**自己账号内的其他** AI 互动。
 
 **交付策略**：采用**分阶段交付**。阶段一先用最直接的实现打通全部核心链路，阶段二在接口不变的前提下替换为完整实现（向量检索、小模型推理）。接口抽象已在设计阶段完成，阶段二只替换实现类。
+
+> **v2.0.0 交付现状（一句话）**：阶段二的**记忆检索（ChromaDB 向量）与记忆提取（LLM 结构化）已落地**，朋友圈正文也升级为 LLM 生成，并新增五套主题；**情感分析的独立 8 类分类器未实现**（详见 [§三 P0 第 4 项](#p0--必须完成week-1-3)），情绪字段作为内部信号槽位保留。
 
 ---
 
@@ -48,7 +51,7 @@
 | Git 提交记录规范 | 约定式提交（Conventional Commits） | 每条 commit 符合 `<type>(<scope>): <subject>` | [协作 §4](docs/COLLABORATION.md#4-commit-规范) |
 | 产出即提交 | 小步提交，禁止攒一天 | 每天至少 1-2 次提交 | 同上 |
 | 部署上云 + 公网访问 | Docker Compose + 云服务器 + Nginx | 手机 4G 打开 `http://<公网IP>` 演示核心链路 | [§9](docs/TECH_DESIGN.md#9-部署方案) |
-| 有 Agent | 三 Agent 协作架构（情感分析/对话生成/记忆管理） | 三个模块职责分离；情感分析为内部信号，通过回复策略差异可观察 | [§5](docs/TECH_DESIGN.md#5-ai-服务设计) |
+| 有 Agent | 职责分离的 AI 模块：**记忆管理**（`agents/memory_agent.py`）、**朋友圈生成**（`moments/moment_agent.py`）、**日程解析**（`schedules/rule_parser.py`）；对话生成走 LLM | 三个模块各自独立、可单测、可替换实现；**情绪始终是内部信号**（槽位保留，界面不渲染） | [§5](docs/TECH_DESIGN.md#5-ai-服务设计) |
 
 > **验收演示脚本**见本文 [第九节](#九验收演示脚本)。答辩当天照此顺序演示，10 分钟走完全部硬性要求。
 
@@ -57,7 +60,7 @@
 ## 三、核心功能清单
 
 > **进度图例**：✅ 已完成并上线 ｜ ⚠️ 部分完成（缺口已注明） ｜ ❌ 未做 / 砍掉
-> **状态核对日期：2026-10-20**（依据 `backend/internal/handler/router.go` 的路由注册与各 `service/*.go`）。
+> **状态核对日期：2026-10-30（v2.0.0 封版）**，依据：`backend/internal/handler/router.go` 路由注册、各 `service/*.go`、`ai-service/app/**`、`frontend/src/stores/theme.ts`。
 
 ### P0 · 必须完成（Week 1-3）
 
@@ -78,10 +81,11 @@
    - Markdown 渲染
    - 左侧人设列表即对话列表 + 历史消息
 
-4. ✅ **情感分析（双向，内部信号）**
-   - 用户消息与 AI 回复均做 8 类情绪识别
+4. ⚠️ **情感分析（双向，内部信号）** — **设计保留，独立分类器未落地**
+   - 设计目标：用户消息与 AI 回复均做 8 类情绪识别
    - **不向用户展示标签**：情绪是内部信号，用于记忆写入、画像构建与回复策略选择
-   - 效果通过 AI 回复策略的差异体现——悲伤时先共情不给建议，开心时语气更活泼
+   - **v2.0.0 现状（如实登记）**：`chat_messages.emotion_label` / `emotion_score` 与 `ai_moments.emotion_label` 三个槽位**保留未删**（回读字段，前端不渲染）；但 `ai-service` 里**没有 `classifiers/` 模块，也没有 `EMOTION_BACKEND` 开关**——即独立的 8 类分类器**未实现**。当前"情绪感知"实际由 LLM 自身对上下文的理解承担，不是分类器打分的结果。
+   - ⚠️ **演示注意**：不要再说"情感分析 Agent 在后台识别了情绪"；改为"AI 会结合上下文调整语气"，且**不要用情绪标签做任何展示**（本来也不该展示）。
 
 5. ✅ **记忆系统（一人设一份）**
    - 记住用户说过的事实、偏好、重要事件
@@ -97,11 +101,12 @@
 
 ### P1 · 应该完成（Week 3-4）
 
-7. ✅ **AI 朋友圈（账号内）**
+7. ✅ **AI 朋友圈（账号内）· 已升级为智能生成**
    - AI 伴侣定时发动态，**同账号下的其他** AI 角色评论互动
    - 用户可点赞和评论，**不能自己发动态**
    - 只见自己账号的内容，没有跨用户社区
-   - 四个端点已上线（列表 / 点赞 / 评论列表 / 发评论），**无手动触发接口**
+   - 四个端点已上线（列表 / 点赞 / 评论列表 / 发评论），**无手动触发接口**（刻意设计）
+   - **P2 升级**：动态正文由 `ai-service/app/moments/moment_agent.py` 调 LLM 生成（`generate_moment` + `build_moment_prompt`），人设、说话风格与近期事件都进 prompt；**踩空 LLM 时自动回退模板生成**，不会让定时任务失败
 
 8. ✅ **人格演化**
    - 亲密度随对话轮数增长，AI 说话逐渐更随意亲近
@@ -118,12 +123,21 @@
     - 时间解析只做规则档；**解析不出会回问澄清，不静默丢弃**
     - 有手动触发接口 `POST /schedules/:id/trigger`，演示不用等
 
+11. ✅ **多套主题切换（v2.0.0 新增）** — **原列 P2 不做，本期已实现**
+    - 五套主题：**亮色 `light`**、**暗黑 `dark`**、**青春疼痛 `pain`**、**星夜 `custom-zhang`**、**薄雾青 `custom-aqua`**
+    - 入口在侧栏顶部主题按钮，点击**循环切换**；选择写入 `localStorage`（键 `heart-echo-theme`），刷新后保持
+    - **暗黑主题直接复用 Element Plus 官方暗色变量**（`element-plus/theme-chalk/dark/css-vars.css`，选择器是 `html.dark`），自写组件通过 `--color-*` 桥接层跟随
+    - 星夜 / 薄雾青是带背景图的定制主题（`public/images/zhang/night.jpg`、`public/images/aqua/mist.jpg`），因**不挂 `html.dark`**，需自行补齐 Element Plus 的 fill / border / mask / 阴影派生色，否则会冒出亮色块
+    - 首屏防闪白：`index.html` 有预置脚本，在 Vue 挂载前就读 `localStorage` 并挂好类名
+
 ### P2 · 不做
 
-11. ❌ ~~语音对话~~
-12. ❌ ~~情绪趋势大屏可视化~~
-13. ❌ ~~消息编辑 / 撤回~~
-14. ❌ ~~主题切换 / 深色模式~~
+> 下列为立项时的「不做」决策，**保留原文痕迹**；已实现者标注现状，不静默删除。
+
+12. ❌ ~~语音对话~~ — 仍未做
+13. ❌ ~~情绪趋势大屏可视化~~ — 仍未做（`GET /emotion/trend` 仍为预留，无实现）
+14. ❌ ~~消息编辑 / 撤回~~ — 仍未做
+15. ✅ ~~主题切换 / 深色模式~~ — **原列 P2 不做，v2.0.0 已实现**（五套主题，见上方 P1 第 11 项）
 
 ---
 
@@ -135,14 +149,14 @@
 
 | 能力 | 阶段一（Week 2-3） | 阶段二（Week 3-4） | 切换方式 | 当前档位 |
 |------|-------------------|-------------------|----------|:--------:|
-| 情感分析 | 关键词词典（8 类情绪） | ONNX 小模型推理 | 环境变量 `EMOTION_BACKEND` | ⏳ **阶段一**（`lexicon`） |
+| 情感分析 | 关键词词典（8 类情绪） | ONNX 小模型推理 | 环境变量 `EMOTION_BACKEND` | ⚠️ **两档均未实现**（无 `classifiers/`、无该环境变量） |
 | 记忆检索 | PostgreSQL：最近 N 条 + 关键词加权 | ChromaDB 向量语义检索 | 环境变量 `MEMORY_BACKEND` | ✅ **阶段二已上线**（`vector`：chromadb + 本地 ONNX MiniLM） |
 | 记忆提取 | 规则提取（句式匹配） | LLM 结构化提取 | 环境变量 `MEMORY_EXTRACT_BACKEND` | ✅ **阶段二已上线**（`llm`：同时产出记忆与画像候选） |
 | 人格演化 | 对话轮数驱动的亲密度 | 亲密度 +（**可选**）AI 自述补充 | `personas.state` | ✅ 阶段一档已落地并维护 |
 | 朋友圈评论 | 模板生成 | Agent 自主生成 | 服务内策略切换 | ✅ 阶段一档已落地 |
 | 日程时间解析（P1） | 规则档（句式匹配） | LLM 结构化解析 | 环境变量 `SCHEDULE_PARSE_BACKEND` | ✅ 阶段一档已落地（`rule`） |
 
-> **阶段二的两项已交付**：记忆检索与记忆提取均已切到阶段二实现，**接口一行未改**（Go 与前端无感知）；情感分析的 ONNX 替换是唯一剩余项，属可选升级——**阶段一实现全部保留为可回退兜底档**，改环境变量即可切回。
+> **阶段二的交付结论**：记忆检索与记忆提取均已切到阶段二实现，**接口一行未改**（Go 与前端无感知），另外朋友圈正文也升级为 LLM 生成；**情感分析两档都未实现**（阶段一词典档也没有），是最明确的遗留项——见 [§三 P0 第 4 项](#p0--必须完成week-1-3)。其余领域的阶段一实现（PG 关键词召回、规则提取、规则时间解析）**全部保留为可回退兜底档**，改环境变量即可切回。
 > 向量检索用的 ONNX 模型（all-MiniLM-L6-v2，约 243MB）因国内服务器无法直接拉取，采用**本地打包 → scp → docker cp → `chroma_cache` 卷持久化**的离线搬运方案，详见 [技术文档 §9.6](docs/TECH_DESIGN.md#96-国内服务器离线模型搬运方案2026-10-20新增)。
 
 **阶段划分的意义**：
@@ -164,6 +178,7 @@
 ┌──────────────────────────────────────────────────────────┐
 │  前端层  Vue3 + TypeScript + Pinia + Vue Router           │
 │  登录注册 / 流式对话 / 朋友圈 / 人设管理 / 用户画像         │
+│  多套主题：亮色 / 暗黑 / 青春疼痛 / 星夜 / 薄雾青          │
 └────────────────────────┬─────────────────────────────────┘
                          │ RESTful API + SSE
                          ▼
@@ -171,20 +186,27 @@
 │  业务后端层  Go + Gin + GORM                              │
 │  JWT 鉴权 / 人设与消息持久化                               │
 │  统一响应中间件 / 统一错误码 / 路由分组                    │
+│  定时任务（Go 侧）：朋友圈 / 主动消息 / 日程扫描            │
 └────────────────────────┬─────────────────────────────────┘
-                         │ 内部 HTTP 调用
+                         │ 内部 HTTP 调用（X-Internal-Token）
                          ▼
 ┌──────────────────────────────────────────────────────────┐
 │  AI 服务层  Python FastAPI                                │
-│  情感分析 Agent / 对话生成 Agent / 记忆管理 Agent          │
-│  DeepSeek API ｜ 阶段二：ONNX 小模型 / ChromaDB            │
+│  对话生成 / 记忆管理 / 朋友圈生成 / 日程解析                │
+│  DeepSeek API ｜ ChromaDB 向量检索（ONNX MiniLM）          │
 └────────────────────────┬─────────────────────────────────┘
                          ▼
 ┌──────────────────────────────────────────────────────────┐
-│  数据层  PostgreSQL（关系数据 + 记忆）                    │
-│          阶段二：ChromaDB（向量记忆索引）                  │
+│  数据层  PostgreSQL（关系数据 + 记忆，唯一事实来源）        │
+│          ChromaDB（向量记忆索引，可重建）—— v2.0.0 已启用   │
 └──────────────────────────────────────────────────────────┘
 ```
+
+**关键设计点（v2.0.0）**：
+
+- **ChromaDB 是索引、不是事实来源**：记忆先落 PostgreSQL（拿到主键），再把主键当作文档 ID 写进 ChromaDB。检索按语义相似度召回，但**必须同时带 `user_id` + `persona_id` 两个过滤条件**——`persona_id` 是全局自增，少一个条件就会跨用户/跨人设串号。向量库不可用时**降级为无记忆，对话主链路照常**。
+- **Element Plus 暗黑主题**：`main.ts` 在导入亮色样式后**紧跟**导入 `element-plus/theme-chalk/dark/css-vars.css`（其变量定义在 `html.dark` 上），随后由 `styles/global.css` 覆写。暗黑主题直接复用这套官方变量；而星夜 / 薄雾青是自定义类名（`theme-zhang` / `theme-aqua`）**不命中 `html.dark`**，因此必须手动补齐 Element Plus 的 fill / border 派生色 / `--el-mask-color` / 阴影，漏一项就会在弹窗、卡片上冒出亮色块。
+- **首屏不闪白**：`index.html` 里有一段预置脚本，在 Vue 挂载前就读 `localStorage` 的 `heart-echo-theme` 并挂好类名，避免默认亮色先闪一下再切成深色。
 
 ### 5.2 技术选型
 
@@ -193,7 +215,8 @@
 | 前端框架 | Vue3 + TypeScript | 硬性要求，且生态成熟 |
 | 状态管理 | Pinia | Vue3 官方推荐，TS 支持好 |
 | 路由 | Vue Router 4 | 硬性要求，配路由守卫 |
-| UI 库 | Element Plus | 中文文档完善，组件覆盖全 |
+| UI 库 | Element Plus | 中文文档完善，组件覆盖全；**暗黑主题复用官方 `dark/css-vars.css`**，不自研组件库 |
+| 多套主题 | 五套：亮色 / 暗黑 / 青春疼痛 / 星夜 / 薄雾青 | 用 `<html>` 上的类名切换 CSS 变量，零运行时依赖；选择存 `localStorage`，`index.html` 预置脚本防首屏闪白 |
 | HTTP 客户端 | Axios | 拦截器机制成熟，便于统一处理 Token 与错误码 |
 | Markdown 渲染 | markdown-it + highlight.js + DOMPurify | 轻量可控，避免 XSS |
 | 后端框架 | Go + Gin | 硬性要求，上手快、中间件生态好 |
@@ -201,10 +224,10 @@
 | 数据库 | PostgreSQL 16 | 一个库搞定全部数据，JSONB 适合存画像与人格状态（情绪是消息表上的两个标量列） |
 | AI 服务 | Python FastAPI | AI 生态好，与 Go 通过内部 HTTP 通信 |
 | LLM | DeepSeek API | 国内可访问、便宜、兼容 OpenAI 格式 |
-| 情感分析（阶段一） | 8 类情绪关键词词典 | 离线、零依赖 |
-| 情感分析（阶段二） | chinese-chat-sentiment-8class + ONNX | 中文对话情感分类 |
-| 记忆检索（阶段一） | PostgreSQL：最近 N 条 + 关键词加权 | 零额外组件 |
-| 记忆检索（阶段二） | ChromaDB 向量检索 | 语义召回 |
+| 情感分析（阶段一） | 8 类情绪关键词词典 | 离线、零依赖。**⚠️ v2.0.0 未落地**：`ai-service` 无 `classifiers/`，情绪字段仅作预留槽位 |
+| 情感分析（阶段二） | chinese-chat-sentiment-8class + ONNX | 中文对话情感分类。**⚠️ 未实现**，属可选升级 |
+| 记忆检索（阶段一） | PostgreSQL：最近 N 条 + 关键词加权 | 零额外组件，保留为可回退兜底档 |
+| 记忆检索（阶段二） | ChromaDB 向量检索 + ONNX MiniLM 向量化 | 语义召回。**v2.0.0 已上线**，模型随 chromadb 容器内置（`/root/.cache/chroma`） |
 | 部署 | Docker Compose + 云服务器 | 学生机约 15-20 元/月 |
 | 反向代理 | Nginx | 前端静态文件 + API 转发 |
 
@@ -314,7 +337,7 @@
 | 3 | 登录 → **刷新页面** → 仍是登录态 | 登录状态持久化 | 要求 3 |
 | 4 | 未登录状态直接访问 `/chat` → 被弹回登录页 | 路由守卫 | 要求 1 |
 | 5 | 创建一个 AI 人设（名字 + 性格 + 说话风格） | 人设管理 | — |
-| 6 | 发"今天上班好累啊" → AI 先共情、不给建议；再发"今天升职了！" → 语气明显更活泼 | **流式输出 + 打字机**；讲解词："两次回复策略不同，是情感分析 Agent 在后台识别了情绪，但它不会把标签暴露给用户" | 要求 1 |
+| 6 | 发"今天上班好累啊" → AI 先共情、不给建议；再发"今天升职了！" → 语气明显更活泼 | **流式输出 + 打字机**；讲解词改为："**AI 会结合上下文调整语气**——累的时候先共情、不急着给建议，开心时更活泼"（⚠️ **不要**说"情感分析 Agent 识别了情绪"：v2.0.0 未实现独立分类器，见 [§三 P0 第 4 项](#p0--必须完成week-1-3)） | 要求 1 |
 | 7 | 对 AI 说"我养了只猫叫豆豆" | 记忆写入 | — |
 | 8 | 切到另一个伴侣问"我养了什么？"→ 它不知道；切回原来那个再问 → 答得出 | **AI 记得我**，且记忆按人设隔离 | — |
 | 9 | 点"立即触发主动消息" | 主动消息（Agent 自主发起） | — |
@@ -327,6 +350,7 @@
 | 16（**朋友圈 · 需要等或灌数据**） | 二选一：① **等待**——`MOMENT_JOB_INTERVAL` 已调短（如 2 分钟），等定时任务生成新动态后刷新；② **灌数据**——演示前直接写入历史动态预置好，现场只做**点赞 + 评论**互动 | `MomentJob` 定时生成的证据（**朋友圈没有手动触发接口**，这一点要在讲解时说明是刻意设计） | — |
 | 17（**P2 展示 · 记忆提取与画像**） | 对 AI 说「**我是程序员，喜欢跑步，最近去了三亚**」→ 等一轮回复后打开「我的画像」页 → 展示提取出的结构化 JSON（occupation=程序员、interests 含跑步、近期事件含三亚）→ 讲解词："这是 LLM 结构化提取的产物，落库在 `user_profile`，一人设一份" | LLM 记忆提取、画像生成链路 | — |
 | 18（**P2 展示 · 向量语义召回**） | 接着问 AI「**还记得我最近去哪了吗**」→ AI 答出三亚（**注意：问句里没有"三亚"这个词**，靠的是 ChromaDB 向量语义检索）→ 讲解词："阶段一是关键词匹配，问'去哪'匹配不到'三亚'；阶段二用 ONNX 模型把句子向量化后按语义召回" | ChromaDB 向量检索、语义召回 | — |
+| 19（**v2.0.0 展示 · 多套主题**） | 点侧栏顶部主题按钮，**连续点 4 次**走完「亮色 → 暗黑 → 青春疼痛 → 星夜 → 薄雾青」→ 每次切换后**刷新页面**，证明选择被持久化；中间可开一个 `ElDialog` 或按钮，说明暗黑主题下 Element Plus 组件不会冒出亮色块 | 多套主题、Element Plus 暗黑主题、CSS 变量桥接 | — |
 
 **翻车预案**：
 
@@ -346,7 +370,7 @@
 ## 十、前置准备清单
 
 - [ ] GitHub 仓库 `heart-echo` 建立，三人均为 collaborator，`main`/`develop` 已开分支保护
-- [ ] 三人环境：Node ≥18、Go ≥1.21、Python ≥3.10、Docker Desktop
+- [ ] 三人环境：Node ≥18、**Go ≥1.27**（`go.mod` 要求 1.27.1）、Python ≥3.10、Docker Desktop
 - [ ] DeepSeek API Key 申请完成，余额充足（开发用几块钱够）
 - [ ] 接口契约冻结，前端 Mock 就位
 - [ ] 云服务器购买（可延到 Week 3 再买，前期本地 Docker 开发）
@@ -358,6 +382,7 @@
 | 文档 | 内容 |
 |------|------|
 | [README.md](README.md) | 项目概览（本文）——定位、功能、架构、排期、分工、验收脚本 |
+| [CHANGELOG.md](CHANGELOG.md) | **版本发版说明**——v2.0.0 新增功能、技术重构、已知限制 |
 | [docs/KICKOFF.md](docs/KICKOFF.md) | **立项讨论稿**——一页讲清"做什么 / 你做什么 / 难不难 / 值不值"，给队友看这份 |
 | [docs/TECH_DESIGN.md](docs/TECH_DESIGN.md) | 技术文档——前后端/AI 详细设计、阶段划分与接口抽象、数据库、API、错误码、部署 |
 | [docs/COLLABORATION.md](docs/COLLABORATION.md) | 团队协作文档——分工、Git 工作流、Commit 规范、命名规范、Review 流程 |
@@ -376,24 +401,68 @@
 
 ## 十二、快速开始（本地开发）
 
+**前置要求（与仓库实际文件一致，别按旧印象装）**：
+
+| 依赖 | 版本 | 依据 |
+|------|------|------|
+| Node.js | ≥ 18（建议 20） | Vite 5 / Vue 3 |
+| **Go** | **≥ 1.27** | `backend/go.mod` 写着 `go 1.27.1`，**低于此版本 `go build` 直接报错**（README 早期写的 1.21 已不适用） |
+| Python | ≥ 3.10 | `ai-service/requirements.txt`（版本用 `==` 钉死，不要 `pip install -U`） |
+| Docker Desktop | 任意较新版本 | 跑 PostgreSQL；想用向量检索还要跑 chromadb |
+| DeepSeek API Key | — | 填进 `ai-service/.env` 的 `DEEPSEEK_API_KEY`，缺了对话会走 `5001` |
+
 ```bash
 git clone git@github.com:<org>/heart-echo.git
 cd heart-echo
 
-# 1. 启动 PostgreSQL
+# ── 0. 准备四份 .env（全部不入库；backend/.env.example 等文件都在对应目录下）
+cp backend/.env.example   backend/.env
+cp ai-service/.env.example ai-service/.env
+cp frontend/.env.example  frontend/.env
+cp deploy/.env.example    deploy/.env
+# 然后手动填 ai-service/.env 的 DEEPSEEK_API_KEY
+
+# ── 1. 起依赖容器：PostgreSQL（必选）+ ChromaDB（可选）
+#    dev compose 里两个服务都有，一起起最省事
 docker compose -f deploy/docker-compose.dev.yml up -d
 
-# 2. Go 后端（:8080）
-cd backend && cp .env.example .env && go mod download && go run ./cmd/server
+# ── 2. Go 后端（:8080）—— 每个服务各开一个终端
+cd backend && go mod download && go run ./cmd/server
 
-# 3. Python AI 服务（:8000）
-cd ai-service && cp .env.example .env && pip install -r requirements.txt
+# ── 3. Python AI 服务（:8000）
+cd ai-service && pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 
-# 4. Vue 前端（:5173）
+# ── 4. Vue 前端（:5173）
 cd frontend && npm install && npm run dev
 ```
 
-浏览器访问 `http://localhost:5173`。
+浏览器访问 **http://localhost:5173**。
+
+**验证是否跑通**：
+
+```bash
+# 后端存活 + 依赖探活（数据库 / AI 服务）
+curl localhost:8080/api/v1/health
+# → {"code":200,"data":{"status":"ok","dependencies":{"database":"ok","aiService":"ok"}}}
+
+# AI 服务单独存活
+curl localhost:8000/health
+```
+
+**关于向量检索（ChromaDB）的两档**：
+
+- **默认档 `MEMORY_BACKEND=recent`**：只用 PostgreSQL 召回，**不需要 chromadb 容器**，本地最轻。新同学第一次跑，保持默认即可。
+- **想体验语义召回**：把 `ai-service/.env` 改成 `MEMORY_BACKEND=vector`，并让 `CHROMA_HOST` / `CHROMA_PORT` 指向容器（宿主机本地跑 uvicorn 时用 `localhost:8001`；容器内用服务名 `chromadb:8000`）。**模型（ONNX MiniLM，约 243MB）随 chromadb 镜像内置**，首次启动会写入 `/root/.cache/chroma`——国内网络若拉不动，见 [技术文档 §9.6 离线搬运方案](docs/TECH_DESIGN.md#96-国内服务器离线模型搬运方案2026-10-20新增)。
+
+**常见卡点**：
+
+| 现象 | 原因 / 处理 |
+|------|-------------|
+| `go: go.mod requires go >= 1.27.1` | Go 版本太低，升级 Go |
+| 后端启动报连不上数据库 / 认证失败 | **`backend/.env` 与 `deploy/.env` 的库名、账号、密码必须逐字对齐**。注意两者模板**默认值不同**：`backend/.env.example` 是 `heart_echo` / `change_me`，而 `deploy/.env.example` 是 `your_db_name` / `your_secure_password_here` 这类**占位符**——只复制不修改，容器建出来的库和后端要连的库对不上。改一边就必须改另一边 |
+| 对话一直报 `5001` | `DEEPSEEK_API_KEY` 还是占位符 |
+| 记忆提取/画像一直为空 | `MEMORY_EXTRACT_BACKEND` 应为 `llm`；且要真的说一句含事实的话（"我是程序员"），等异步提取完成后刷新 |
+| 主题切换后刷新又变回亮色 | `localStorage` 被清或禁用了；主题键是 `heart-echo-theme` |
 
 **环境变量清单**见 [技术文档 §4.6](docs/TECH_DESIGN.md#46-环境变量清单)。**`.env` 严禁提交到仓库。**
