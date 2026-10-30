@@ -13,6 +13,10 @@
 
 ### 新增功能
 
+- **情感分析（阶段一，词典档）**
+  - 实现基于词典的 8 类情感分析，并注入 AI 回复策略（`ai-service/app/classifiers/lexicon.py`，`EMOTION_BACKEND=lexicon` 为默认档）
+  - 用户消息落库后识别情绪，写回 `chat_messages.emotion_label` / `emotion_score`
+  - `sadness` / `anger` / `fear` 注入 system prompt 的回复策略（优先共情、不急着给建议）；情绪仍是内部信号，不进 SSE、界面不展示
 - **多套主题（五套）**
   - 亮色 `light`、暗黑 `dark`、青春疼痛 `pain`、星夜 `custom-zhang`、薄雾青 `custom-aqua`
   - 侧栏顶部按钮**循环切换**，选择写入 `localStorage`（键 `heart-echo-theme`），刷新保持
@@ -65,10 +69,7 @@
 
 ### 已知限制
 
-- **⚠️ 情感分析未实现为独立模块**：`ai-service/app/` 下没有 `classifiers/` 目录，也没有 `EMOTION_BACKEND` 环境变量。`chat_messages.emotion_label` / `emotion_score` 与 `ai_moments.emotion_label` 仅作为**预留槽位**（前端不渲染）。当前"情绪感知"由 LLM 理解上下文承担，不是 8 类分类器打分。
-  - 验收口径：**不要宣称"情感分析 Agent 在后台识别情绪"**；改说"AI 会结合上下文调整语气"
-  - 如需补齐：新增 `classifiers/` + `EMOTION_BACKEND` 开关，约 1-2 天
-- **阶段二情感 ONNX 替换未启用**：`EMOTION_BACKEND=onnx` 不存在，情感侧仍是设计稿状态
+- **阶段二情感 ONNX 替换未启用**：`EMOTION_BACKEND` 已支持 `lexicon`（默认）与 `onnx` 两个取值，但 `onnx` 实现尚未落地，切过去会显式报错；当前使用阶段一词典档。
 - **P2 按计划不做**：语音对话、情绪趋势大屏可视化、消息编辑 / 撤回
 - **朋友圈无手动触发接口**：这是**刻意设计**（契约 §8），演示靠灌数据或调短 `MOMENT_JOB_INTERVAL`
 - **日程没有「新建」入口**：契约 §10 无 `POST /schedules`，日程只能从对话抽取
