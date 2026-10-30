@@ -81,11 +81,12 @@
    - Markdown 渲染
    - 左侧人设列表即对话列表 + 历史消息
 
-4. ✅ **情感分析（用户消息，内部信号）** — **已实现：基于 8 类词典，通过 prompt 策略注入**
-   - 用户消息进入对话链路时，由 `ai-service/app/classifiers/lexicon.py` 做 8 类情绪识别（`joy` `sadness` `anger` `fear` `surprise` `disgust` `neutral` `love`），结果写回 `chat_messages.emotion_label` / `emotion_score`
-   - `sadness` / `anger` / `fear` 会向 system prompt 追加共情策略（"优先共情、不急着给建议"），驱动回复语气；`EMOTION_BACKEND=lexicon` 为默认档
+4. ✅ **情感分析（双向：用户消息与 AI 回复，内部信号）** — **已实现：基于 8 类词典，通过 prompt 策略注入**
+   - 用户消息与 AI 回复落库后，由 `ai-service/app/classifiers/lexicon.py` 做 8 类情绪识别（`joy` `sadness` `anger` `fear` `surprise` `disgust` `neutral` `love`），结果分别写回各自消息的 `chat_messages.emotion_label` / `emotion_score`
+   - 用户消息为 `sadness` / `anger` / `fear` 时，会向 system prompt 追加共情策略（"优先共情、不急着给建议"），驱动本轮回复语气；`EMOTION_BACKEND=lexicon` 为默认档
+   - AI 回复（含主动消息 / 日程提醒）异步分析写库，不阻塞主流程；用户消息侧在生成前同步分析，以便影响本轮 prompt
    - **不向用户展示标签**：情绪是内部信号，用于回复策略与后续聚合；界面一律不渲染，SSE 也没有 `emotion` 事件
-   - **阶段二可选升级**：`EMOTION_BACKEND=onnx` 尚未落地，当前不影响演示；AI 回复侧暂不做情绪分析，其情绪列保留为内部预留槽位
+   - **阶段二可选升级**：`EMOTION_BACKEND=onnx` 尚未落地，当前不影响演示
    - 演示注意：效果通过**回复语气的差异**体现（悲伤先共情、开心更活泼），**不要**展示情绪标签
 
 5. ✅ **记忆系统（一人设一份）**

@@ -383,11 +383,16 @@ func (s *ChatService) runStream(
 	// done 已经交给前端，累加放在它之后：亲密度慢一点无所谓，不能拖慢「回复完成」的感知
 	s.incrementFamiliarity(ctx, aiReq.UserID, aiReq.PersonaID)
 
-	// 日程抽取与记忆提取都放在 done 之后异步执行（TECH_DESIGN §5.3 / §5.7）：
-	// 各多一次 ai-service 调用，不能拖慢用户看到回复。
+	// 日程抽取、记忆提取与 AI 回复情绪分析都放在 done 之后异步执行：
+	// 各多一次 ai-service 调用，不能拖慢用户看到回复（TECH_DESIGN §5.1 / §5.3 / §5.7）。
+	//
+	// 情绪分析用 context.Background() 而不是请求 ctx：done 发出后请求可能立即结束，
+	// 用请求 ctx 会让写库随取消一起失败。
 	go s.asyncExtractSchedule(context.Background(), aiReq.UserID, aiReq.PersonaID, aiReq.Message)
 	go s.asyncExtractMemory(
 		context.Background(), aiReq.UserID, aiReq.PersonaID, sourceMessageID, aiReq.Message)
+	go s.analyzeAndStoreEmotion(
+		context.Background(), aiReq.UserID, aiReq.PersonaID, assistant.ID, assistant.Content)
 }
 
 // emitChatEvent 往 channel 推一个事件，返回 false 表示调用方已经不听了。
@@ -405,7 +410,8 @@ func emitChatEvent(ctx context.Context, ch chan<- ChatEvent, ev ChatEvent) bool 
 
 // emotionAnalyzeTimeout 是一次情绪分析的等待上限。
 //
-// 词典档正常是毫秒级；给 3 秒是为了防止 ai-service 卡死把首字延迟拖长。
+// 词典档正常是毫秒级；给 3 秒是为了防止 ai-service 卡死把用户消息侧的首字延迟拖长。
+// AI 回复侧也复用这个上限，避免后台 goroutine 无限挂起。
 // 超时按"没分析出来"处理：情绪是增强信号，不是主链路。
 const emotionAnalyzeTimeout = 3 * time.Second
 
@@ -416,23 +422,39 @@ const emotionAnalyzeTimeout = 3 * time.Second
 func (s *ChatService) analyzeUserEmotion(
 	ctx context.Context, aiReq *ChatRequest, messageID uint64,
 ) {
+	result := s.analyzeAndStoreEmotion(
+		ctx, aiReq.UserID, aiReq.PersonaID, messageID, aiReq.Message)
+	if result == nil {
+		return
+	}
+	applyEmotionGuidance(aiReq, emotionGuidance(result.Label))
+}
+
+// analyzeAndStoreEmotion 调用 ai-service 分析一条消息的情绪，校验后写回消息表。
+// 用户消息与 AI 回复共用这里，保证两边对非法标签 / 越界分数的处理完全一致。
+//
+// 返回值只在用户消息侧使用（需要据此调整本轮 prompt）；AI 回复侧的调用方
+// 直接丢弃返回值。任何失败都只记 warn，不改变聊天主流程。
+func (s *ChatService) analyzeAndStoreEmotion(
+	ctx context.Context, userID, personaID, messageID uint64, text string,
+) *EmotionResult {
 	analyzeCtx, cancel := context.WithTimeout(ctx, emotionAnalyzeTimeout)
-	result, err := s.ai.AnalyzeEmotion(analyzeCtx, aiReq.Message)
+	result, err := s.ai.AnalyzeEmotion(analyzeCtx, text)
 	cancel()
 	if err != nil {
 		zap.L().Warn("emotion: analyze failed",
-			zap.Uint64("userID", aiReq.UserID),
-			zap.Uint64("personaID", aiReq.PersonaID),
+			zap.Uint64("userID", userID),
+			zap.Uint64("personaID", personaID),
 			zap.Uint64("messageID", messageID),
 			zap.Error(err))
-		return
+		return nil
 	}
 	if result == nil {
 		zap.L().Warn("emotion: empty result",
-			zap.Uint64("userID", aiReq.UserID),
-			zap.Uint64("personaID", aiReq.PersonaID),
+			zap.Uint64("userID", userID),
+			zap.Uint64("personaID", personaID),
 			zap.Uint64("messageID", messageID))
-		return
+		return nil
 	}
 
 	// Python 换实现后可能返回非法标签或越界分数；宁可丢掉这一次信号，
@@ -441,21 +463,21 @@ func (s *ChatService) analyzeUserEmotion(
 		zap.L().Warn("emotion: invalid result",
 			zap.String("label", result.Label),
 			zap.Float64("score", result.Score))
-		return
+		return nil
 	}
 
 	if err := s.msgRepo.UpdateEmotion(
-		ctx, aiReq.UserID, aiReq.PersonaID, messageID, result.Label, result.Score,
+		ctx, userID, personaID, messageID, result.Label, result.Score,
 	); err != nil {
 		zap.L().Warn("emotion: update message failed",
-			zap.Uint64("userID", aiReq.UserID),
-			zap.Uint64("personaID", aiReq.PersonaID),
+			zap.Uint64("userID", userID),
+			zap.Uint64("personaID", personaID),
 			zap.Uint64("messageID", messageID),
 			zap.Error(err))
-		// 写库失败不影响本轮回复策略：标签已经拿到了，prompt 仍按它调整。
+		// 写库失败仍返回标签：用户消息侧还要靠它调整本轮 prompt。
 	}
 
-	applyEmotionGuidance(aiReq, emotionGuidance(result.Label))
+	return result
 }
 
 // applyEmotionGuidance 把回复策略追加到 speaking_style。
@@ -614,6 +636,10 @@ func (s *ChatService) InjectNudge(ctx context.Context, in NudgeInput) (*NudgeRes
 
 	// 与 runStream 同一时机：assistant 已落库，再累加亲密度
 	s.incrementFamiliarity(ctx, in.UserID, in.PersonaID)
+
+	// 主动消息 / 日程提醒的 AI 回复同样属于"AI 回复侧"，异步补情绪标签。
+	go s.analyzeAndStoreEmotion(
+		context.Background(), in.UserID, in.PersonaID, assistant.ID, assistant.Content)
 
 	// [nudge] 开头的注入内容会在 asyncExtractSchedule 里跳过，
 	// 这里仍调用是为了覆盖将来可能出现的非 [nudge] 注入。

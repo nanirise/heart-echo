@@ -34,7 +34,7 @@ func (r *MessageRepo) Create(ctx context.Context, tx *gorm.DB, m *model.ChatMess
 	return tx.WithContext(ctx).Create(m).Error
 }
 
-// UpdateEmotion 把一轮情绪分析结果写回用户消息。
+// UpdateEmotion 把一轮情绪分析结果写回消息（用户消息或 AI 回复）。
 //
 // WHERE 同时带 user_id / persona_id：messageID 虽然是落库回填的，但多一道
 // 归属条件才能保证任何调用方都不可能改到别人的消息（AGENTS §4.3 红线）。
