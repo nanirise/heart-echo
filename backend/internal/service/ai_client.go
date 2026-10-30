@@ -66,6 +66,15 @@ const (
 	EventError = "error"
 )
 
+// EmotionResult 是 POST /emotion/analyze 的结果（TECH_DESIGN §5.1）。
+//
+// Label 只能是 8 类之一；调用方写库前还要再校验一次，Python 换实现时
+// 不能把非法标签带进 chat_messages。
+type EmotionResult struct {
+	Label string  `json:"label"`
+	Score float64 `json:"score"`
+}
+
 // ScheduleParseResult 是 POST /schedule/parse 的结果（TECH_DESIGN §5.7）。
 //
 // HasIntent=false 表示这句话不是提醒委托（陈述句），调用方不应建日程也不应回问；
@@ -120,8 +129,12 @@ type MomentRequest struct {
 }
 
 // AIClient 是 Go 侧调用 Python AI 服务的唯一出入口。
-// 只放已经落地的内部端点：流式对话、日程解析、记忆提取、向量写入、朋友圈生成。
+// 只放已经落地的内部端点：情绪分析、流式对话、日程解析、记忆提取、向量写入、朋友圈生成。
 type AIClient interface {
+	// AnalyzeEmotion 调 Python 识别一条消息的情绪。
+	// 只负责一次内部 HTTP 调用；写回消息表与调整回复策略都在 ChatService 里做。
+	AnalyzeEmotion(ctx context.Context, text string) (*EmotionResult, error)
+
 	// StreamChat 发起一次流式生成。
 	//
 	// 返回的 error 只表示"没能开始"（连不上 / 非 200）：函数把 channel 交出去
@@ -171,6 +184,45 @@ func NewAIClient(cfg config.AIConfig) AIClient {
 		token:   cfg.ServiceToken,
 		http:    &http.Client{Transport: tr},
 	}
+}
+
+// AnalyzeEmotion 调用 ai-service 的词典分类器（TECH_DESIGN §5.1）。
+//
+// 失败按 ErrAIUnavailable 返回：情绪是对话的附带效果，调用方只记 warn，
+// 不能让它挡住回复生成。
+func (c *aiHTTPClient) AnalyzeEmotion(
+	ctx context.Context, text string,
+) (*EmotionResult, error) {
+	body, err := json.Marshal(map[string]string{"text": text})
+	if err != nil {
+		return nil, errcode.Wrap(errcode.ErrInternal, err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(
+		ctx, http.MethodPost, c.baseURL+"/emotion/analyze", bytes.NewReader(body),
+	)
+	if err != nil {
+		return nil, errcode.Wrap(errcode.ErrInternal, err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("X-Internal-Token", c.token)
+
+	resp, err := c.http.Do(httpReq)
+	if err != nil {
+		return nil, errcode.Wrap(errcode.ErrAIUnavailable, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, errcode.Wrap(
+			errcode.ErrAIUnavailable, fmt.Errorf("ai-service status %d", resp.StatusCode),
+		)
+	}
+
+	var payload EmotionResult
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return nil, errcode.Wrap(errcode.ErrInternal, err)
+	}
+	return &payload, nil
 }
 
 func (c *aiHTTPClient) StreamChat(ctx context.Context, req ChatRequest) (<-chan StreamEvent, error) {

@@ -34,6 +34,23 @@ func (r *MessageRepo) Create(ctx context.Context, tx *gorm.DB, m *model.ChatMess
 	return tx.WithContext(ctx).Create(m).Error
 }
 
+// UpdateEmotion 把一轮情绪分析结果写回用户消息。
+//
+// WHERE 同时带 user_id / persona_id：messageID 虽然是落库回填的，但多一道
+// 归属条件才能保证任何调用方都不可能改到别人的消息（AGENTS §4.3 红线）。
+//
+// 用 map 而不是 struct：emotion_score=0 是合法值，struct 更新会把零值字段跳过。
+func (r *MessageRepo) UpdateEmotion(
+	ctx context.Context, userID, personaID, messageID uint64, label string, score float64,
+) error {
+	return r.db.WithContext(ctx).Model(&model.ChatMessage{}).
+		Where("id = ? AND user_id = ? AND persona_id = ?", messageID, userID, personaID).
+		Updates(map[string]any{
+			"emotion_label": label,
+			"emotion_score": score,
+		}).Error
+}
+
 // ListByPersona 按人设分页取消息，倒序（最新在前，前端自己反转成旧→新）。
 //
 // 两个条件一个都不能少：少 persona_id 会把人设的消息串到一起，

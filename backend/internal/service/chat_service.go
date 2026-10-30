@@ -309,6 +309,10 @@ func (s *ChatService) runStream(
 ) {
 	defer close(ch)
 
+	// 情绪分析必须在首字之前完成：结果要追加进本轮 system prompt（TECH_DESIGN §5.2）。
+	// 词典档是毫秒级；失败只降级为"没有情绪信号"，不影响后面的流式生成。
+	s.analyzeUserEmotion(ctx, &aiReq, sourceMessageID)
+
 	upstream, err := s.ai.StreamChat(ctx, aiReq)
 	if err != nil {
 		// 这里是 5002 而不是 4043：响应头已经写出去了，回不去 HTTP 错误（spec §1.1）。
@@ -395,6 +399,104 @@ func emitChatEvent(ctx context.Context, ch chan<- ChatEvent, ev ChatEvent) bool 
 	case ch <- ev:
 		return true
 	case <-ctx.Done():
+		return false
+	}
+}
+
+// emotionAnalyzeTimeout 是一次情绪分析的等待上限。
+//
+// 词典档正常是毫秒级；给 3 秒是为了防止 ai-service 卡死把首字延迟拖长。
+// 超时按"没分析出来"处理：情绪是增强信号，不是主链路。
+const emotionAnalyzeTimeout = 3 * time.Second
+
+// analyzeUserEmotion 分析这轮用户消息的情绪：写回消息表，并把负向情绪的
+// 回复策略追加进本轮 speaking_style（TECH_DESIGN §5.2）。
+//
+// 任何一步失败都只记 warn，不改变聊天主流程（AGENTS §4.4）。
+func (s *ChatService) analyzeUserEmotion(
+	ctx context.Context, aiReq *ChatRequest, messageID uint64,
+) {
+	analyzeCtx, cancel := context.WithTimeout(ctx, emotionAnalyzeTimeout)
+	result, err := s.ai.AnalyzeEmotion(analyzeCtx, aiReq.Message)
+	cancel()
+	if err != nil {
+		zap.L().Warn("emotion: analyze failed",
+			zap.Uint64("userID", aiReq.UserID),
+			zap.Uint64("personaID", aiReq.PersonaID),
+			zap.Uint64("messageID", messageID),
+			zap.Error(err))
+		return
+	}
+	if result == nil {
+		zap.L().Warn("emotion: empty result",
+			zap.Uint64("userID", aiReq.UserID),
+			zap.Uint64("personaID", aiReq.PersonaID),
+			zap.Uint64("messageID", messageID))
+		return
+	}
+
+	// Python 换实现后可能返回非法标签或越界分数；宁可丢掉这一次信号，
+	// 也不能把脏数据写进 chat_messages（该列没有 CHECK 约束兜底）。
+	if !isValidEmotionLabel(result.Label) || result.Score < 0 || result.Score > 1 {
+		zap.L().Warn("emotion: invalid result",
+			zap.String("label", result.Label),
+			zap.Float64("score", result.Score))
+		return
+	}
+
+	if err := s.msgRepo.UpdateEmotion(
+		ctx, aiReq.UserID, aiReq.PersonaID, messageID, result.Label, result.Score,
+	); err != nil {
+		zap.L().Warn("emotion: update message failed",
+			zap.Uint64("userID", aiReq.UserID),
+			zap.Uint64("personaID", aiReq.PersonaID),
+			zap.Uint64("messageID", messageID),
+			zap.Error(err))
+		// 写库失败不影响本轮回复策略：标签已经拿到了，prompt 仍按它调整。
+	}
+
+	applyEmotionGuidance(aiReq, emotionGuidance(result.Label))
+}
+
+// applyEmotionGuidance 把回复策略追加到 speaking_style。
+//
+// Python 的 PersonaBrief 是 extra="forbid"，新增情绪字段会直接 422；而
+// speaking_style 会原样进入 system prompt，与关系阶段用的是同一个落点
+// （见 buildAIRequest）。aiReq 只属于本次 runStream，改它不会影响其他请求。
+func applyEmotionGuidance(aiReq *ChatRequest, guidance string) {
+	if guidance == "" || aiReq.Persona == nil {
+		return
+	}
+
+	line := "本轮回复要求：" + guidance
+	if aiReq.Persona.SpeakingStyle == "" {
+		aiReq.Persona.SpeakingStyle = line
+		return
+	}
+	aiReq.Persona.SpeakingStyle += "\n" + line
+}
+
+// emotionGuidance 是 TECH_DESIGN §5.2 的情绪应对策略：只对三类负向情绪
+// 要求"先共情、别急着给建议"，其余情绪不额外约束。
+func emotionGuidance(label string) string {
+	switch label {
+	case "sadness":
+		return "用户现在情绪低落，请优先共情，不要急着给建议。"
+	case "anger":
+		return "用户现在有些生气，请先安抚情绪，不要急着讲道理或给建议。"
+	case "fear":
+		return "用户现在感到不安，请先给予安全感，不要急着给建议。"
+	default:
+		return ""
+	}
+}
+
+// isValidEmotionLabel 只认 AGENTS §4.4 的 8 类情绪。
+func isValidEmotionLabel(label string) bool {
+	switch label {
+	case "joy", "sadness", "anger", "fear", "surprise", "disgust", "neutral", "love":
+		return true
+	default:
 		return false
 	}
 }
