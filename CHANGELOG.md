@@ -13,9 +13,9 @@
 
 ### 新增功能
 
-- **情感分析（阶段一，词典档）**
+- **情感分析（双向，阶段一，词典档）**
   - 实现基于词典的 8 类情感分析，并注入 AI 回复策略（`ai-service/app/classifiers/lexicon.py`，`EMOTION_BACKEND=lexicon` 为默认档）
-  - 用户消息落库后识别情绪，写回 `chat_messages.emotion_label` / `emotion_score`
+  - 用户消息与 AI 回复落库后分别识别情绪，写回各自消息的 `chat_messages.emotion_label` / `emotion_score`；AI 回复侧异步分析，不阻塞主流程
   - `sadness` / `anger` / `fear` 注入 system prompt 的回复策略（优先共情、不急着给建议）；情绪仍是内部信号，不进 SSE、界面不展示
 - **多套主题（五套）**
   - 亮色 `light`、暗黑 `dark`、青春疼痛 `pain`、星夜 `custom-zhang`、薄雾青 `custom-aqua`
