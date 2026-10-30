@@ -305,25 +305,166 @@ html.theme-pain .conversation-name {
   letter-spacing: 1px;
 }
 
-/* ================= 留给张瀚霖的私货主题接口 ================= */
+/* ================= 私货主题：星夜 ================= */
+/*
+ * 「星夜」—— 深蓝的天，金色的月。
+ *
+ * 背景用的是 public/images/zhang/night.jpg。四张素材里只挑了这一张：
+ * 它留白最多、色调最统一（深蓝 + 金），压暗之后不跟正文抢；其余几张主体
+ * 几乎铺满画面，铺成满屏背景会糊成一片色块，文字压上去也读不清。
+ * 竖构图在宽屏上会被裁掉上下，所以 background-position 定在上方 30%，
+ * 保住月亮和人物上半身；手机上本来就是竖屏，反而能看到完整构图。
+ *
+ * ⚠️ 这里没有写 `html.dark`，所以 `dark/css-vars.css` 不会命中（它的选择器是
+ * `html.dark`）。Element Plus 会退回亮色默认值，因此下面必须把 fill-color、
+ * border 派生色、语义色 light-9、mask、阴影全部补齐 —— 少一个就冒出亮色块，
+ * 典型三处：消息气泡变纯白、下拉面板纯白、弹窗遮罩发白。
+ */
 html.theme-zhang {
-  /*
-    张瀚霖，请在这里写你的 CSS 变量！
-    覆盖下面这几个 --el-*，整个项目（含 Element 组件和自写组件）就会变成你的专属主题。
-    要做深色方案的话，记得再补 --el-fill-color* 与阴影类变量。
-  */
-  --el-color-primary: #9b59b6; /* 占位色，请替换 */
-  --el-bg-color: #f4f4f9; /* 占位色，请替换 */
-  --el-bg-color-overlay: #ffffff; /* 卡片/弹层底色，请替换 */
-  --el-text-color-primary: #303133; /* 占位色，请替换 */
-  --el-text-color-secondary: #909399; /* 占位色，请替换 */
-  --el-border-color: #dcdfe6; /* 占位色，请替换 */
+  /* 声明这是深色界面：滚动条、原生控件、输入法候选框会跟着变暗 */
+  color-scheme: dark;
 
-  /* 桥接层：自写组件读的是 --color-*，这里让它们跟着上面的 --el-* 一起变 */
+  /* ---------- 底色 ---------- */
+  --el-bg-color: #101a33;
+  --el-bg-color-page: #0b1226;
+  --el-bg-color-overlay: #17233f; /* 弹层、下拉面板 */
+
+  /* ---------- 文字 ---------- */
+  --el-text-color-primary: #e8eef8;
+  --el-text-color-regular: #c3cfe2;
+  --el-text-color-secondary: #8e9dba;
+  --el-text-color-placeholder: #6b7a97;
+  --el-text-color-disabled: #55627c;
+
+  /* ---------- 描边 ---------- */
+  --el-border-color: #2a3a5c;
+  --el-border-color-light: #263550;
+  --el-border-color-lighter: #213049;
+  --el-border-color-extra-light: #1d2b42;
+  --el-border-color-dark: #35496f;
+  --el-border-color-darker: #415a85;
+
+  /* ---------- 填充：hover 底色、气泡底色、骨架屏 ---------- */
+  --el-fill-color: #1f2e4e;
+  --el-fill-color-light: #1a2744;
+  --el-fill-color-lighter: #16223b;
+  --el-fill-color-extra-light: #131e35;
+  --el-fill-color-dark: #253659;
+  --el-fill-color-darker: #2b3f66;
+  --el-fill-color-blank: #101a33;
+
+  /* ---------- 主色：月金 ---------- */
+  --el-color-primary: #b8934d;
+  /*
+   * light-3/5/7/8 在 Element Plus 里是构建时用白色混合算出来的**固定值**，
+   * 改主色不会自动重算。不补齐的话，按钮 hover 会从金色闪回默认蓝。
+   */
+  --el-color-primary-light-3: #cdb382;
+  --el-color-primary-light-5: #dbc9a6;
+  --el-color-primary-light-7: #e9dec9;
+  --el-color-primary-light-8: #f0e9db;
+  /*
+   * light-9 是例外，要单独想：亮色主题下它等于「主色 + 92% 白」，铺在深蓝上
+   * 就是一块刺眼的白金。本主题里它主要当「我发出的消息气泡」底色
+   * （MessageBubble 的 .row-mine），所以改成暗金褐。
+   */
+  --el-color-primary-light-9: #2a2519;
+  --el-color-primary-dark-2: #93753d;
+
+  /*
+   * ---------- 语义色 ----------
+   * 每种只补 light-3（浅态描边 / hover）与 light-9（浅色块背景）。
+   * light-9 尤其不能留默认值：`el-alert type="success"` 拿它当底色，
+   * 默认是近白色 #f0f9eb，铺在深夜蓝上就是一块刺眼的白斑。
+   */
+  --el-color-success: #58a87a;
+  --el-color-success-light-3: #8ac2a2;
+  --el-color-success-light-9: #162a24;
+  --el-color-danger: #d96a6a;
+  --el-color-danger-light-3: #e49696;
+  --el-color-danger-light-9: #2e1f24;
+  --el-color-warning: #d8a353;
+  --el-color-warning-light-3: #e3be86;
+  --el-color-warning-light-9: #2e2617;
+  --el-color-info: #8296b8;
+  --el-color-info-light-3: #a7b5cd;
+  --el-color-info-light-9: #1c2436;
+
+  /*
+   * ---------- 遮罩与阴影 ----------
+   * mask 默认是 rgba(255,255,255,.9)（白色遮罩），深色主题下开弹窗会闪一下白。
+   * 阴影默认是浅灰黑，在这种底上几乎看不见，改成更深的蓝黑。
+   */
+  --el-mask-color: rgba(5, 9, 20, 0.72);
+  --el-mask-color-extra-light: rgba(5, 9, 20, 0.36);
+  --el-box-shadow: 0 12px 32px 4px rgba(4, 8, 18, 0.4), 0 8px 20px rgba(4, 8, 18, 0.36);
+  --el-box-shadow-light: 0 0 12px rgba(4, 8, 18, 0.36);
+  --el-box-shadow-lighter: 0 0 6px rgba(4, 8, 18, 0.3);
+  --el-box-shadow-dark: 0 16px 48px 16px rgba(4, 8, 18, 0.46), 0 12px 32px rgba(4, 8, 18, 0.4);
+
+  /*
+   * 桥接层：自写组件读的是 --color-*，让它们跟着上面的 --el-* 一起变。
+   *
+   * 不会循环引用：`--el-*` 在这一层是字面量，特异性（html.theme-zhang）高于
+   * `:root` 里的 `--el-*: var(--color-*)`，所以解析 --color-primary 时拿到
+   * 的 --el-color-primary 已经是 #b8934d，链路到此为止。
+   * 前提是**每个 --color-* 对应的 --el-* 都要在本文里给字面量**，
+   * 漏一个就会退回去读 :root 那条反向映射，那才真的成环。
+   */
   --color-primary: var(--el-color-primary);
   --color-bg: var(--el-bg-color);
   --color-card-bg: var(--el-bg-color-overlay);
   --color-text-main: var(--el-text-color-primary);
   --color-text-secondary: var(--el-text-color-secondary);
+  --color-text-placeholder: var(--el-text-color-placeholder);
   --color-border: var(--el-border-color);
+}
+
+html.theme-zhang body {
+  background-image: url('/images/zhang/night.jpg');
+  background-size: cover;
+  background-position: center 30%;
+  /* fixed：滚动时背景不动，长页面不会把插画拖出画面 */
+  background-attachment: fixed;
+  background-color: #101a33;
+}
+
+/* 压暗到「还看得出是一幅画、但正文读得清」的程度 */
+html.theme-zhang body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(9, 15, 33, 0.52), rgba(9, 15, 33, 0.8));
+  z-index: -1;
+  pointer-events: none;
+}
+
+/*
+ * 侧栏与聊天左栏背后直接就是插画，补一层半透明底，否则导航和人设名会糊在图上。
+ * 用元素自身的背景色 + 模糊，而不是给文字加投影：投影会让小字发脏。
+ */
+html.theme-zhang .sidebar {
+  background: rgba(14, 22, 44, 0.62);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-right-color: var(--el-border-color);
+}
+
+html.theme-zhang .persona-list,
+html.theme-zhang .conversation-head,
+html.theme-zhang .page-header {
+  background: rgba(18, 29, 56, 0.55);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+/*
+ * 卡片本来是 --color-card-bg 的实色，盖在图上像贴了张纸。这里单独给半透明，
+ * 让底下的蓝透出一点。
+ * 改的是 el-card 自己的变量而不是 background 属性 —— 后者得加 !important 才盖得住。
+ */
+html.theme-zhang .el-card {
+  --el-card-bg-color: rgba(23, 35, 63, 0.82);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }

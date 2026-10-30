@@ -25,7 +25,7 @@ const THEME_LABELS: Record<Theme, string> = {
   light: '亮色',
   dark: '暗黑',
   pain: '青春疼痛',
-  'custom-zhang': '私货',
+  'custom-zhang': '星夜',
 }
 
 const themeIcon = computed(() => THEME_ICONS[themeStore.theme])
