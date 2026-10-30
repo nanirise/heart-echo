@@ -7,7 +7,7 @@ const THEME_STORAGE_KEY = 'heart-echo-theme'
  * 合法主题的完整列表，cycleTheme 按这个顺序循环。
  * 新增主题时在这里加一项，并同步 THEME_CLASS 与 index.html 的首屏映射。
  */
-export const THEMES = ['light', 'dark', 'pain', 'custom-zhang'] as const
+export const THEMES = ['light', 'dark', 'pain', 'custom-zhang', 'custom-aqua'] as const
 export type Theme = (typeof THEMES)[number]
 
 /** 每个主题挂到 <html> 上的类名；light 用 :root 默认值，不需要额外类名 */
@@ -16,6 +16,7 @@ const THEME_CLASS: Record<Theme, string | null> = {
   dark: 'dark',
   pain: 'theme-pain',
   'custom-zhang': 'theme-zhang',
+  'custom-aqua': 'theme-aqua',
 }
 
 function isTheme(value: string | null): value is Theme {

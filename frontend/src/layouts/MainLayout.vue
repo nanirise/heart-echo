@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { Component } from 'vue'
-import { Cloudy, Moon, Star, Sunny } from '@element-plus/icons-vue'
+import { Cloudy, Moon, Star, Sunny, Sunrise } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 
 import AvatarBadge from '@/components/common/AvatarBadge.vue'
@@ -19,13 +19,15 @@ const THEME_ICONS: Record<Theme, Component> = {
   dark: Moon,
   pain: Cloudy,
   'custom-zhang': Star,
+  'custom-aqua': Sunrise,
 }
 
 const THEME_LABELS: Record<Theme, string> = {
   light: '亮色',
   dark: '暗黑',
   pain: '青春疼痛',
-  'custom-zhang': '私货',
+  'custom-zhang': '星夜',
+  'custom-aqua': '薄雾青',
 }
 
 const themeIcon = computed(() => THEME_ICONS[themeStore.theme])
