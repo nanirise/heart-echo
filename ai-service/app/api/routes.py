@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.agents.memory_agent import build_memory_extractor
+from app.classifiers import classify as classify_emotion
 from app.moments.moment_agent import generate_moment
 from app.core.config import get_settings
 from app.core.llm_client import LLMUnavailableError, stream_reply
@@ -150,6 +151,26 @@ class MemoryStoreResponse(BaseModel):
     stored: int
 
 
+class EmotionAnalyzeRequest(BaseModel):
+    """Go → Python 的情绪分析请求（TECH_DESIGN §5.1）。
+
+    只收文本：归属字段与本服务无关，结果由 Go 侧写回消息表。
+    """
+
+    text: str = Field(min_length=1)
+    model_config = ConfigDict(extra="forbid")
+
+
+class EmotionAnalyzeResponse(BaseModel):
+    """8 类情绪之一 + 0~1 的置信度。
+
+    情绪是内部信号：只用于写消息表与驱动回复策略，绝不进前端契约（AGENTS §4.4）。
+    """
+
+    label: str
+    score: float
+
+
 class MomentGenerateRequest(BaseModel):
     """Go → Python 的朋友圈生成请求（TECH_DESIGN §5.5）。
 
@@ -284,6 +305,17 @@ async def stream_chat(req: ChatRequest) -> StreamingResponse:
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.post("/emotion/analyze", dependencies=[Depends(verify_internal_token)])
+async def analyze_emotion(req: EmotionAnalyzeRequest) -> EmotionAnalyzeResponse:
+    """识别一条用户消息的情绪（TECH_DESIGN §5.1）。
+
+    词典档是纯 CPU 的毫秒级计算，不需要 to_thread。本端点不落库：
+    Go 侧拿到结果后自行写回 chat_messages，并以同样的标签调整本轮回复策略。
+    """
+    result = classify_emotion(req.text)
+    return EmotionAnalyzeResponse(label=result["label"], score=result["score"])
 
 
 @router.post(

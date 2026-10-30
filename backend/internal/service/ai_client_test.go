@@ -158,6 +158,60 @@ func TestExtractMemories(t *testing.T) {
 	}
 }
 
+// TestAnalyzeEmotion 钉住 Go → Python 的情绪分析契约：POST /emotion/analyze，
+// 请求字段是 text（Python 侧 extra="forbid"），响应只取 label + score。
+func TestAnalyzeEmotion(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/emotion/analyze" {
+			t.Errorf("请求应为 POST /emotion/analyze，实际 %s %s", r.Method, r.URL.Path)
+		}
+		if got := r.Header.Get("X-Internal-Token"); got != "test-token" {
+			t.Errorf("X-Internal-Token 应为 test-token，实际 %q", got)
+		}
+		var body struct {
+			Text string `json:"text"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("请求体解析失败: %v", err)
+		}
+		if body.Text != "我最近很难过" {
+			t.Errorf("text 应为用户原话，实际 %q", body.Text)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"label":"sadness","score":0.7}`))
+	}))
+	defer server.Close()
+
+	client := &aiHTTPClient{baseURL: server.URL, token: "test-token", http: server.Client()}
+	got, err := client.AnalyzeEmotion(context.Background(), "我最近很难过")
+	if err != nil {
+		t.Fatalf("AnalyzeEmotion 不应失败: %v", err)
+	}
+	if got.Label != "sadness" || got.Score != 0.7 {
+		t.Errorf("情绪结果错误: %+v", got)
+	}
+}
+
+// TestAnalyzeEmotionUnavailable 锁定非 200 的归类：调用方虽然只记 warn，
+// 但错误码仍应是 5002，不能退化成 5000。
+func TestAnalyzeEmotionUnavailable(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	client := &aiHTTPClient{baseURL: server.URL, token: "test-token", http: server.Client()}
+
+	_, err := client.AnalyzeEmotion(context.Background(), "我最近很难过")
+	if err == nil {
+		t.Fatal("非 200 应返回错误")
+	}
+	var bizErr *errcode.BizError
+	if !errors.As(err, &bizErr) || bizErr.Code != errcode.ErrAIUnavailable {
+		t.Fatalf("错误码应为 %d，实际 %v", errcode.ErrAIUnavailable, err)
+	}
+}
+
 // TestStoreMemories 钉住 Go → Python 的向量写入契约：snake_case、归属 ID 在顶层，
 // 记忆 ID 必须是 PG 主键（Python 拿它当 Chroma 文档 ID 做幂等 upsert）。
 func TestStoreMemories(t *testing.T) {
